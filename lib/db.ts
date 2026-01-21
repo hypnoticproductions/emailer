@@ -26,7 +26,12 @@ function getPrismaClient(): PrismaClient {
 
   // Create pool if it doesn't exist
   if (!globalThis.pool) {
-    globalThis.pool = new Pool({ connectionString });
+    globalThis.pool = new Pool({
+      connectionString,
+      ssl: {
+        rejectUnauthorized: false, // Accept self-signed certificates from Vercel Postgres
+      },
+    });
   }
 
   const adapter = new PrismaPg(globalThis.pool);
