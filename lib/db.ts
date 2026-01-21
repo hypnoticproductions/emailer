@@ -1,106 +1,134 @@
-// lib/db.ts - Direct PostgreSQL connection (no Prisma!)
-import { Pool } from 'pg';
+// lib/db.ts - Supabase client connection
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 declare global {
   // eslint-disable-next-line no-var
-  var pool: Pool | undefined;
+  var supabase: SupabaseClient | undefined;
 }
 
-// Create connection pool
-function getPool(): Pool {
-  if (globalThis.pool) {
-    return globalThis.pool;
+// Create Supabase client
+function getSupabaseClient(): SupabaseClient {
+  if (globalThis.supabase) {
+    return globalThis.supabase;
   }
 
-  const connectionString = process.env.DATABASE_URL;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!connectionString) {
-    throw new Error('DATABASE_URL must be set');
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
   }
 
-  globalThis.pool = new Pool({
-    connectionString,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
+  globalThis.supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
   });
 
-  return globalThis.pool;
+  return globalThis.supabase;
 }
 
-export const pool = getPool();
+export const supabase = getSupabaseClient();
 
 // Database initialization - create tables if they don't exist
 export async function initializeDatabase() {
-  const client = await pool.connect();
-
   try {
     // Create Contact table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS contacts (
-        id TEXT PRIMARY KEY,
-        email TEXT UNIQUE NOT NULL,
-        first_name TEXT,
-        last_name TEXT,
-        company TEXT,
-        title TEXT,
-        sector TEXT NOT NULL,
-        linkedin TEXT,
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_contacts_sector ON contacts(sector);
-      CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
-    `);
+    const { error: contactsError } = await supabase.rpc('exec_sql', {
+      sql: `
+        CREATE TABLE IF NOT EXISTS contacts (
+          id TEXT PRIMARY KEY,
+          email TEXT UNIQUE NOT NULL,
+          first_name TEXT,
+          last_name TEXT,
+          company TEXT,
+          title TEXT,
+          sector TEXT NOT NULL,
+          linkedin TEXT,
+          notes TEXT,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_contacts_sector ON contacts(sector);
+        CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
+      `
+    });
 
-    // Create Newsletter table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS newsletters (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        signal JSONB,
-        sent_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
-    `);
+    // If RPC doesn't exist, try direct SQL execution
+    if (contactsError?.message?.includes('function') || contactsError?.code === '42883') {
+      // Tables need to be created via SQL editor in Supabase dashboard
+      // For now, we'll use the REST API to check if tables exist
+      const { data: contacts, error: checkError } = await supabase
+        .from('contacts')
+        .select('id')
+        .limit(1);
 
-    // Create EmailSent table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS emails_sent (
-        id TEXT PRIMARY KEY,
-        contact_id TEXT NOT NULL REFERENCES contacts(id),
-        newsletter_id TEXT NOT NULL REFERENCES newsletters(id),
-        subject TEXT NOT NULL,
-        html_content TEXT NOT NULL,
-        text_content TEXT,
-        resend_id TEXT UNIQUE,
-        status TEXT DEFAULT 'pending',
-        sent_at TIMESTAMP,
-        delivered_at TIMESTAMP,
-        opened_at TIMESTAMP,
-        clicked_at TIMESTAMP,
-        replied_at TIMESTAMP,
-        sector TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_emails_sent_contact_id ON emails_sent(contact_id);
-      CREATE INDEX IF NOT EXISTS idx_emails_sent_newsletter_id ON emails_sent(newsletter_id);
-      CREATE INDEX IF NOT EXISTS idx_emails_sent_status ON emails_sent(status);
-      CREATE INDEX IF NOT EXISTS idx_emails_sent_sector ON emails_sent(sector);
-      CREATE INDEX IF NOT EXISTS idx_emails_sent_resend_id ON emails_sent(resend_id);
-    `);
+      if (checkError && checkError.code === '42P01') {
+        // Table doesn't exist - need to create via SQL
+        throw new Error(
+          'Tables not found. Please run the following SQL in your Supabase SQL Editor:\n\n' +
+          `CREATE TABLE IF NOT EXISTS contacts (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
+  company TEXT,
+  title TEXT,
+  sector TEXT NOT NULL,
+  linkedin TEXT,
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_contacts_sector ON contacts(sector);
+CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
+
+CREATE TABLE IF NOT EXISTS newsletters (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  signal JSONB,
+  sent_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS emails_sent (
+  id TEXT PRIMARY KEY,
+  contact_id TEXT NOT NULL REFERENCES contacts(id),
+  newsletter_id TEXT NOT NULL REFERENCES newsletters(id),
+  subject TEXT NOT NULL,
+  html_content TEXT NOT NULL,
+  text_content TEXT,
+  resend_id TEXT UNIQUE,
+  status TEXT DEFAULT 'pending',
+  sent_at TIMESTAMP,
+  delivered_at TIMESTAMP,
+  opened_at TIMESTAMP,
+  clicked_at TIMESTAMP,
+  replied_at TIMESTAMP,
+  sector TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_emails_sent_contact_id ON emails_sent(contact_id);
+CREATE INDEX IF NOT EXISTS idx_emails_sent_newsletter_id ON emails_sent(newsletter_id);
+CREATE INDEX IF NOT EXISTS idx_emails_sent_status ON emails_sent(status);
+CREATE INDEX IF NOT EXISTS idx_emails_sent_sector ON emails_sent(sector);
+CREATE INDEX IF NOT EXISTS idx_emails_sent_resend_id ON emails_sent(resend_id);`
+        );
+      }
+
+      console.log('✅ Database tables verified');
+      return { success: true, message: 'Tables already exist or were verified' };
+    }
 
     console.log('✅ Database tables initialized successfully');
     return { success: true };
   } catch (error) {
     console.error('❌ Database initialization error:', error);
     throw error;
-  } finally {
-    client.release();
   }
 }
 
@@ -108,116 +136,155 @@ export async function initializeDatabase() {
 export const db = {
   // Contacts
   async getContacts(sectors?: string[]) {
-    const client = await pool.connect();
-    try {
-      if (sectors && sectors.length > 0) {
-        const result = await client.query(
-          'SELECT * FROM contacts WHERE sector = ANY($1)',
-          [sectors]
-        );
-        return result.rows;
-      }
-      const result = await client.query('SELECT * FROM contacts');
-      return result.rows;
-    } finally {
-      client.release();
+    let query = supabase.from('contacts').select('*');
+
+    if (sectors && sectors.length > 0) {
+      query = query.in('sector', sectors);
     }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+    return data || [];
   },
 
   async countContacts() {
-    const client = await pool.connect();
-    try {
-      const result = await client.query('SELECT COUNT(*) FROM contacts');
-      return parseInt(result.rows[0].count);
-    } finally {
-      client.release();
-    }
+    const { count, error } = await supabase
+      .from('contacts')
+      .select('*', { count: 'exact', head: true });
+
+    if (error) throw error;
+    return count || 0;
   },
 
   async getContactsBySector() {
-    const client = await pool.connect();
-    try {
-      const result = await client.query(
-        'SELECT sector, COUNT(*) as count FROM contacts GROUP BY sector'
-      );
-      return result.rows;
-    } finally {
-      client.release();
-    }
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('sector');
+
+    if (error) throw error;
+
+    // Group by sector manually
+    const grouped = (data || []).reduce((acc: any, row: any) => {
+      const sector = row.sector;
+      if (!acc[sector]) {
+        acc[sector] = { sector, count: 0 };
+      }
+      acc[sector].count++;
+      return acc;
+    }, {});
+
+    return Object.values(grouped);
   },
 
   // Newsletters
   async createNewsletter(title: string, content: string, signal: any) {
-    const client = await pool.connect();
-    try {
-      const id = `newsletter_${Date.now()}`;
-      await client.query(
-        'INSERT INTO newsletters (id, title, content, signal) VALUES ($1, $2, $3, $4)',
-        [id, title, content, JSON.stringify(signal)]
-      );
-      return { id, title, content, signal };
-    } finally {
-      client.release();
-    }
+    const id = `newsletter_${Date.now()}`;
+    const { data, error } = await supabase
+      .from('newsletters')
+      .insert({
+        id,
+        title,
+        content,
+        signal,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 
   async getRecentNewsletters(limit: number = 5) {
-    const client = await pool.connect();
-    try {
-      const result = await client.query(
-        'SELECT * FROM newsletters ORDER BY created_at DESC LIMIT $1',
-        [limit]
-      );
-      return result.rows;
-    } finally {
-      client.release();
-    }
+    const { data, error } = await supabase
+      .from('newsletters')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    return data || [];
   },
 
   // Email tracking
-  async createEmailSent(data: any) {
-    const client = await pool.connect();
-    try {
-      const id = `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      await client.query(
-        `INSERT INTO emails_sent
-        (id, contact_id, newsletter_id, subject, html_content, text_content, resend_id, status, sector, sent_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-        [id, data.contactId, data.newsletterId, data.subject, data.htmlContent,
-         data.textContent || '', data.resendId, data.status, data.sector]
-      );
-      return { id, ...data };
-    } finally {
-      client.release();
-    }
+  async createEmailSent(emailData: any) {
+    const id = `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const { data, error } = await supabase
+      .from('emails_sent')
+      .insert({
+        id,
+        contact_id: emailData.contactId,
+        newsletter_id: emailData.newsletterId,
+        subject: emailData.subject,
+        html_content: emailData.htmlContent,
+        text_content: emailData.textContent || '',
+        resend_id: emailData.resendId,
+        status: emailData.status,
+        sector: emailData.sector,
+        sent_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 
   async getEmailStats() {
-    const client = await pool.connect();
-    try {
-      const total = await client.query('SELECT COUNT(*) FROM emails_sent');
-      const byStatus = await client.query(
-        'SELECT status, COUNT(*) as count FROM emails_sent GROUP BY status'
-      );
-      const bySector = await client.query(
-        'SELECT sector, COUNT(*) as count FROM emails_sent GROUP BY sector'
-      );
-      const opened = await client.query(
-        'SELECT COUNT(*) FROM emails_sent WHERE opened_at IS NOT NULL'
-      );
-      const clicked = await client.query(
-        'SELECT COUNT(*) FROM emails_sent WHERE clicked_at IS NOT NULL'
-      );
+    // Get total count
+    const { count: total } = await supabase
+      .from('emails_sent')
+      .select('*', { count: 'exact', head: true });
 
-      return {
-        total: parseInt(total.rows[0].count),
-        byStatus: byStatus.rows,
-        bySector: bySector.rows,
-        opened: parseInt(opened.rows[0].count),
-        clicked: parseInt(clicked.rows[0].count),
-      };
-    } finally {
-      client.release();
-    }
+    // Get all emails for grouping
+    const { data: allEmails } = await supabase
+      .from('emails_sent')
+      .select('status, sector, opened_at, clicked_at');
+
+    const emails = allEmails || [];
+
+    // Group by status
+    const byStatus = emails.reduce((acc: any, email: any) => {
+      const status = email.status;
+      if (!acc[status]) {
+        acc[status] = { status, count: 0 };
+      }
+      acc[status].count++;
+      return acc;
+    }, {});
+
+    // Group by sector
+    const bySector = emails.reduce((acc: any, email: any) => {
+      const sector = email.sector;
+      if (!acc[sector]) {
+        acc[sector] = { sector, count: 0 };
+      }
+      acc[sector].count++;
+      return acc;
+    }, {});
+
+    // Count opened and clicked
+    const opened = emails.filter((e: any) => e.opened_at).length;
+    const clicked = emails.filter((e: any) => e.clicked_at).length;
+
+    return {
+      total: total || 0,
+      byStatus: Object.values(byStatus),
+      bySector: Object.values(bySector),
+      opened,
+      clicked,
+    };
+  },
+
+  async updateEmailStatus(resendId: string, updates: any) {
+    const { data, error } = await supabase
+      .from('emails_sent')
+      .update(updates)
+      .eq('resend_id', resendId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 };

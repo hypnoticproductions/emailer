@@ -28,20 +28,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       contacts: {
         total: totalContacts,
-        bySector: contactsBySector.map((row) => ({
+        bySector: contactsBySector.map((row: any) => ({
           sector: row.sector,
-          _count: { sector: parseInt(row.count) },
+          _count: { sector: row.count },
         })),
       },
       emails: {
         total: emailStats.total,
-        byStatus: emailStats.byStatus.map((row) => ({
+        byStatus: emailStats.byStatus.map((row: any) => ({
           status: row.status,
-          _count: { status: parseInt(row.count) },
+          _count: { status: row.count },
         })),
-        bySector: emailStats.bySector.map((row) => ({
+        bySector: emailStats.bySector.map((row: any) => ({
           sector: row.sector,
-          _count: { sector: parseInt(row.count) },
+          _count: { sector: row.count },
         })),
       },
       engagement: {
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
         openRate: parseFloat(openRate),
         clickRate: parseFloat(clickRate),
       },
-      recentNewsletters: recentNewsletters.map((row) => ({
+      recentNewsletters: recentNewsletters.map((row: any) => ({
         id: row.id,
         title: row.title,
         createdAt: row.created_at,

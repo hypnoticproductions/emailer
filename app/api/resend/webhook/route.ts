@@ -1,5 +1,6 @@
-// app/api/resend/webhook/route.ts - Simplified for now (TODO: Add tracking updates)
+// app/api/resend/webhook/route.ts - Track email events
 import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,11 +14,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Log the webhook event
     console.log(`Received webhook: ${type} for email ${data.email_id}`);
 
-    // TODO: Implement email tracking updates
-    // For now, just acknowledge receipt
+    // Update email tracking based on event type
+    const emailId = data.email_id;
+    const updates: any = {};
+
+    switch (type) {
+      case 'email.delivered':
+        updates.delivered_at = new Date().toISOString();
+        updates.status = 'delivered';
+        break;
+      case 'email.opened':
+        updates.opened_at = new Date().toISOString();
+        break;
+      case 'email.clicked':
+        updates.clicked_at = new Date().toISOString();
+        break;
+      case 'email.bounced':
+      case 'email.complained':
+        updates.status = 'failed';
+        break;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await db.updateEmailStatus(emailId, updates);
+      console.log(`Updated email ${emailId}:`, updates);
+    }
 
     return NextResponse.json({ received: true });
   } catch (error) {
