@@ -121,12 +121,24 @@ Keep it under 100 words. Be direct and analytical.`;
 
   /**
    * Generate complete personalized email HTML
+   * Now supports both structured signals and raw markdown content
    */
   async generatePersonalizedEmail(
     contact: Contact,
-    signal: Signal,
+    content: any,
     newsletterTitle: string
   ): Promise<{ html: string; text: string }> {
+    // Check if content is structured signal or raw markdown
+    const isMarkdown = typeof content.rawContent === 'string' && !content.signals;
+
+    if (isMarkdown) {
+      // Handle newsletter/proposal markdown content
+      return this.generatePersonalizedMarkdownEmail(contact, content, newsletterTitle);
+    }
+
+    // Original signal format (keep for backwards compatibility)
+    const signal = content as Signal;
+
     // Generate personalized intro
     const intro = await this.generatePersonalizedIntro(
       contact,
@@ -322,5 +334,286 @@ WUKR Wire Intelligence | Powered by MANUS
     `.trim();
 
     return { html, text };
+  },
+
+  /**
+   * Generate personalized email from markdown content (newsletters/proposals)
+   */
+  async generatePersonalizedMarkdownEmail(
+    contact: Contact,
+    content: any,
+    newsletterTitle: string
+  ): Promise<{ html: string; text: string }> {
+    try {
+      // Generate personalized introduction using Claude
+      const introPrompt = `You are writing a personalized email introduction for a ${content.type || 'newsletter'}.
+
+CONTACT DETAILS:
+- Company: ${contact.company || 'Unknown'}
+- Sector: ${contact.sector}
+- Email: ${contact.email}
+
+CONTENT SUBJECT: ${content.subject || newsletterTitle}
+CONTENT TYPE: ${content.type === 'proposal' ? 'Partnership Proposal' : 'Newsletter'}
+
+CONTENT PREVIEW:
+${content.rawContent.substring(0, 500)}...
+
+TASK:
+Write a warm, professional 2-3 sentence personalized introduction that:
+1. Greets the contact (use company name if name not available)
+2. Explains why this ${content.type || 'content'} is relevant to their ${contact.sector} sector
+3. Sets context for what follows
+4. Maintains a professional but friendly tone
+
+Keep it under 60 words.`;
+
+      const introMessage = await anthropic.messages.create({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 200,
+        messages: [{ role: 'user', content: introPrompt }],
+      });
+
+      const introContent = introMessage.content.find((c) => c.type === 'text');
+      const intro = introContent && 'text' in introContent
+        ? introContent.text
+        : `Hi there,\n\nWe thought this ${content.type || 'update'} would be particularly relevant for ${contact.sector}. Here's what you need to know:`;
+
+      // Convert markdown to HTML using Claude
+      const htmlPrompt = `Convert this markdown content into clean, professional HTML email content.
+
+MARKDOWN CONTENT:
+${content.rawContent}
+
+REQUIREMENTS:
+1. Convert markdown formatting (headers, bold, lists, etc.) to proper HTML
+2. Maintain all the original content
+3. Use clean, semantic HTML
+4. Add subtle styling for readability (line-height, spacing)
+5. Make links clickable
+6. Keep it email-safe (inline styles only)
+7. Do NOT include <html>, <head>, or <body> tags - just the content HTML
+8. Do NOT add any introductions or conclusions - just convert the markdown
+
+Return ONLY the HTML content, nothing else.`;
+
+      const htmlMessage = await anthropic.messages.create({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 4000,
+        messages: [{ role: 'user', content: htmlPrompt }],
+      });
+
+      const htmlContent = htmlMessage.content.find((c) => c.type === 'text');
+      const bodyHtml = htmlContent && 'text' in htmlContent
+        ? htmlContent.text
+        : content.rawContent.replace(/\n/g, '<br>');
+
+      // Build complete HTML email
+      const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${newsletterTitle}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 650px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f9fafb;
+    }
+    .header {
+      background: linear-gradient(135deg, ${content.type === 'proposal' ? '#7c3aed 0%, #db2777 100%' : '#667eea 0%, #764ba2 100%'});
+      color: white;
+      padding: 30px 20px;
+      border-radius: 8px 8px 0 0;
+      text-align: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+    }
+    .header p {
+      margin: 5px 0 0 0;
+      opacity: 0.9;
+      font-size: 14px;
+    }
+    .content {
+      background: white;
+      padding: 35px 30px;
+      border-radius: 0 0 8px 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .intro {
+      font-size: 16px;
+      margin-bottom: 30px;
+      padding: 18px;
+      background: #f3f4f6;
+      border-left: 4px solid ${content.type === 'proposal' ? '#7c3aed' : '#667eea'};
+      border-radius: 4px;
+      line-height: 1.7;
+    }
+    .sector-tag {
+      display: inline-block;
+      background: ${content.type === 'proposal' ? '#7c3aed' : '#667eea'};
+      color: white;
+      padding: 5px 14px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+      letter-spacing: 0.5px;
+    }
+    .main-content {
+      font-size: 15px;
+      line-height: 1.8;
+      color: #374151;
+    }
+    .main-content h1, .main-content h2, .main-content h3 {
+      color: #111827;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      font-weight: 700;
+    }
+    .main-content h1 { font-size: 26px; }
+    .main-content h2 { font-size: 22px; }
+    .main-content h3 { font-size: 18px; }
+    .main-content p {
+      margin: 15px 0;
+    }
+    .main-content ul, .main-content ol {
+      margin: 15px 0;
+      padding-left: 25px;
+    }
+    .main-content li {
+      margin: 8px 0;
+    }
+    .main-content a {
+      color: ${content.type === 'proposal' ? '#7c3aed' : '#667eea'};
+      text-decoration: none;
+      border-bottom: 1px solid ${content.type === 'proposal' ? '#ddd6fe' : '#e0e7ff'};
+    }
+    .main-content a:hover {
+      border-bottom-color: ${content.type === 'proposal' ? '#7c3aed' : '#667eea'};
+    }
+    .main-content strong {
+      color: #111827;
+      font-weight: 600;
+    }
+    .main-content blockquote {
+      border-left: 3px solid #e5e7eb;
+      padding-left: 20px;
+      margin: 20px 0;
+      color: #6b7280;
+      font-style: italic;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 35px;
+      padding: 25px;
+      font-size: 13px;
+      color: #6b7280;
+      border-top: 1px solid #e5e7eb;
+    }
+    .footer a {
+      color: ${content.type === 'proposal' ? '#7c3aed' : '#667eea'};
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>WUKR WIRE</h1>
+    <p>${newsletterTitle}</p>
+  </div>
+
+  <div class="content">
+    <span class="sector-tag">${contact.sector.replace(/_/g, ' ')}</span>
+
+    <div class="intro">
+      ${intro}
+    </div>
+
+    <div class="main-content">
+      ${bodyHtml}
+    </div>
+  </div>
+
+  <div class="footer">
+    <p><strong>WUKR Wire Intelligence</strong> | Powered by MANUS</p>
+    <p style="margin-top: 10px;">
+      <a href="https://github.com/hypnoticproductions/quintapoo-memory">View Content Source on GitHub</a>
+    </p>
+    <p style="margin-top: 15px; font-size: 11px; color: #9ca3af;">
+      Sent to ${contact.email} | ${contact.company || 'Your Organization'}
+    </p>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      // Generate plain text version
+      const text = `
+${newsletterTitle}
+${'='.repeat(newsletterTitle.length)}
+
+${intro}
+
+---
+
+${content.rawContent}
+
+---
+
+WUKR Wire Intelligence | Powered by MANUS
+View Content Source: https://github.com/hypnoticproductions/quintapoo-memory
+
+Sent to ${contact.email} | ${contact.company || 'Your Organization'}
+      `.trim();
+
+      return { html, text };
+    } catch (error) {
+      console.error('Claude markdown email generation error:', error);
+
+      // Fallback to simple format
+      const simpleHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${newsletterTitle}</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+    .header { background: #667eea; color: white; padding: 20px; text-align: center; }
+    .content { background: white; padding: 30px; }
+    pre { white-space: pre-wrap; word-wrap: break-word; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>WUKR WIRE</h1>
+    <p>${newsletterTitle}</p>
+  </div>
+  <div class="content">
+    <p>Hi ${contact.company || 'there'},</p>
+    <p>Here's the latest from WUKR Wire for the ${contact.sector} sector:</p>
+    <hr>
+    <pre>${content.rawContent}</pre>
+  </div>
+</body>
+</html>
+      `.trim();
+
+      return {
+        html: simpleHtml,
+        text: `${newsletterTitle}\n\n${content.rawContent}`
+      };
+    }
   },
 };
