@@ -6,31 +6,44 @@ import { Pool } from 'pg';
 declare global {
   // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
+  // eslint-disable-next-line no-var
+  var pool: Pool | undefined;
 }
 
-// Create Prisma client with PostgreSQL adapter for Prisma 7
-function createPrismaClient() {
+// Lazy initialization - only create client when actually needed
+function getPrismaClient(): PrismaClient {
+  if (globalThis.prisma) {
+    return globalThis.prisma;
+  }
+
   const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL;
 
   if (!connectionString) {
-    console.warn('No DATABASE_URL found, PrismaClient may not work correctly');
-    // Return a dummy client for build time
-    return new PrismaClient() as any;
+    throw new Error(
+      'DATABASE_URL or POSTGRES_PRISMA_URL must be set. Please add it to your environment variables.'
+    );
   }
 
-  const pool = new Pool({
-    connectionString,
-  });
+  // Create pool if it doesn't exist
+  if (!globalThis.pool) {
+    globalThis.pool = new Pool({ connectionString });
+  }
 
-  const adapter = new PrismaPg(pool);
+  const adapter = new PrismaPg(globalThis.pool);
+  const client = new PrismaClient({ adapter });
 
-  return new PrismaClient({
-    adapter,
-  });
+  if (process.env.NODE_ENV !== 'production') {
+    globalThis.prisma = client;
+  }
+
+  return client;
 }
 
-export const db = globalThis.prisma || createPrismaClient();
-
-if (process.env.NODE_ENV !== 'production') {
-  globalThis.prisma = db;
-}
+// Export a proxy that lazily initializes the client
+export const db = new Proxy({} as PrismaClient, {
+  get(target, prop) {
+    const client = getPrismaClient();
+    const value = (client as any)[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
