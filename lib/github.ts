@@ -8,6 +8,13 @@ export interface GithubFile {
   sha: string;
 }
 
+export interface ContentFile {
+  name: string;
+  path: string;
+  type: 'newsletter' | 'proposal';
+  download_url: string;
+}
+
 export interface CommitInfo {
   sha: string;
   message: string;
@@ -17,7 +24,63 @@ export interface CommitInfo {
 
 export const githubClient = {
   /**
-   * Fetch a file from your Quintapoo repository
+   * List all newsletters available in the newsletters folder
+   */
+  async listNewsletters(): Promise<ContentFile[]> {
+    try {
+      const response = await axios.get(
+        `https://api.github.com/repos/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/contents/newsletters`,
+        {
+          headers: {
+            Authorization: `token ${process.env.GITHUB_TOKEN}`,
+          },
+        }
+      );
+
+      return response.data
+        .filter((file: any) => file.type === 'file' && file.name.endsWith('.md'))
+        .map((file: any) => ({
+          name: file.name,
+          path: file.path,
+          type: 'newsletter',
+          download_url: file.download_url,
+        }));
+    } catch (error) {
+      console.error('Failed to list newsletters:', error);
+      return [];
+    }
+  },
+
+  /**
+   * List all proposals available in the proposals folder
+   */
+  async listProposals(): Promise<ContentFile[]> {
+    try {
+      const response = await axios.get(
+        `https://api.github.com/repos/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/contents/proposals`,
+        {
+          headers: {
+            Authorization: `token ${process.env.GITHUB_TOKEN}`,
+          },
+        }
+      );
+
+      return response.data
+        .filter((file: any) => file.type === 'file' && file.name.endsWith('.md'))
+        .map((file: any) => ({
+          name: file.name,
+          path: file.path,
+          type: 'proposal',
+          download_url: file.download_url,
+        }));
+    } catch (error) {
+      console.error('Failed to list proposals:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Fetch a file from the repository
    */
   async getFile(path: string): Promise<GithubFile | null> {
     try {
@@ -31,10 +94,8 @@ export const githubClient = {
         }
       );
 
-      // Get content
       let content = response.data;
 
-      // If it's a string, keep as is
       if (typeof content !== 'string') {
         content = JSON.stringify(content);
       }
@@ -52,77 +113,132 @@ export const githubClient = {
   },
 
   /**
-   * Get latest Morphic Trade Signal from MANUS
-   * Fetches the markdown signal file
+   * Get the latest newsletter or proposal
    */
-  async getLatestSignal(): Promise<any> {
-    // The signal is stored in wukr_wire_signals_jan21.md
-    const file = await this.getFile('wukr_wire_signals_jan21.md');
+  async getLatestContent(type: 'newsletter' | 'proposal' = 'newsletter'): Promise<any> {
+    try {
+      const files = type === 'newsletter'
+        ? await this.listNewsletters()
+        : await this.listProposals();
 
-    if (!file) {
-      throw new Error('Signal file not found in repository');
+      if (files.length === 0) {
+        throw new Error(`No ${type}s found in repository`);
+      }
+
+      // Get the most recent file (assuming files are sorted or picking first non-template)
+      const latestFile = files.find(f => !f.name.includes('template')) || files[0];
+
+      const content = await this.getFile(latestFile.path);
+
+      if (!content) {
+        throw new Error(`Failed to fetch ${type}: ${latestFile.name}`);
+      }
+
+      // Parse the markdown content
+      const parsed = this.parseMarkdown(content.content, type);
+
+      return {
+        ...parsed,
+        fileName: latestFile.name,
+        filePath: latestFile.path,
+        type,
+      };
+    } catch (error) {
+      console.error(`Failed to get latest ${type}:`, error);
+      throw error;
     }
-
-    // Parse the markdown content into structured data
-    const signals = this.parseSignalMarkdown(file.content);
-
-    return signals;
   },
 
   /**
-   * Parse markdown signal file into structured data
+   * Get specific content by filename
    */
-  parseSignalMarkdown(markdown: string): any {
-    const lines = markdown.split('\n');
-    const signals: any[] = [];
-    let currentSignal: any = null;
+  async getContentByName(filename: string, type: 'newsletter' | 'proposal'): Promise<any> {
+    try {
+      const folder = type === 'newsletter' ? 'newsletters' : 'proposals';
+      const path = `${folder}/${filename}`;
 
-    for (const line of lines) {
-      // Detect signal headers (### SIG-JAN21-001: ...)
-      if (line.startsWith('### SIG-')) {
-        if (currentSignal) {
-          signals.push(currentSignal);
-        }
-        const titleMatch = line.match(/### (SIG-[^:]+): (.+)/);
-        if (titleMatch) {
-          currentSignal = {
-            id: titleMatch[1],
-            title: titleMatch[2],
-            source: '',
-            signal: '',
-            tradeAngle: '',
-            morphicFit: '',
-          };
-        }
-      } else if (currentSignal) {
-        // Parse signal fields
-        if (line.startsWith('**Source:**')) {
-          currentSignal.source = line.replace('**Source:**', '').trim();
-        } else if (line.startsWith('**Signal:**')) {
-          currentSignal.signal = line.replace('**Signal:**', '').trim();
-        } else if (line.startsWith('**Trade Angle:**')) {
-          currentSignal.tradeAngle = line.replace('**Trade Angle:**', '').trim();
-        } else if (line.startsWith('**Morphic Fit:**')) {
-          currentSignal.morphicFit = line.replace('**Morphic Fit:**', '').trim();
-        }
+      const content = await this.getFile(path);
+
+      if (!content) {
+        throw new Error(`File not found: ${filename}`);
       }
-    }
 
-    // Add last signal
-    if (currentSignal) {
-      signals.push(currentSignal);
-    }
+      const parsed = this.parseMarkdown(content.content, type);
 
-    return {
-      title: 'WUKR WIRE INTELLIGENCE',
-      date: new Date().toISOString(),
-      signals,
+      return {
+        ...parsed,
+        fileName: filename,
+        filePath: path,
+        type,
+      };
+    } catch (error) {
+      console.error(`Failed to get ${type} ${filename}:`, error);
+      throw error;
+    }
+  },
+
+  /**
+   * Parse markdown content to extract metadata and format
+   */
+  parseMarkdown(markdown: string, type: 'newsletter' | 'proposal'): any {
+    const lines = markdown.split('\n');
+
+    // Extract metadata from markdown headers
+    const metadata: any = {
       rawContent: markdown,
     };
+
+    // Extract subject line (first line starting with # or **Subject:**)
+    const titleLine = lines.find(line => line.startsWith('# '));
+    if (titleLine) {
+      metadata.title = titleLine.replace('# ', '').trim();
+    }
+
+    // Extract subject from **Subject:** line
+    const subjectLine = lines.find(line => line.startsWith('**Subject:**'));
+    if (subjectLine) {
+      metadata.subject = subjectLine.replace('**Subject:**', '').trim();
+    }
+
+    // Extract from line
+    const fromLine = lines.find(line => line.startsWith('**From:**'));
+    if (fromLine) {
+      metadata.from = fromLine.replace('**From:**', '').trim();
+    }
+
+    // Extract date line
+    const dateLine = lines.find(line => line.startsWith('**Date:**'));
+    if (dateLine) {
+      metadata.date = dateLine.replace('**Date:**', '').trim();
+    }
+
+    // Extract edition (for newsletters)
+    const editionLine = lines.find(line => line.startsWith('**Edition:**'));
+    if (editionLine) {
+      metadata.edition = editionLine.replace('**Edition:**', '').trim();
+    }
+
+    // Use title as subject if subject not found
+    if (!metadata.subject && metadata.title) {
+      metadata.subject = metadata.title;
+    }
+
+    // Default values
+    if (!metadata.subject) {
+      metadata.subject = type === 'newsletter'
+        ? 'WUKR Wire Intelligence Update'
+        : 'Partnership Opportunity - WUKR Wire';
+    }
+
+    if (!metadata.title) {
+      metadata.title = metadata.subject;
+    }
+
+    return metadata;
   },
 
   /**
-   * Get list of recent commits (to show signal history)
+   * Get list of recent commits (to show content history)
    */
   async getRecentCommits(path: string, limit: number = 5): Promise<CommitInfo[]> {
     try {
@@ -152,9 +268,9 @@ export const githubClient = {
   },
 
   /**
-   * Watch for signal updates (returns timestamp of last commit)
+   * Watch for content updates (returns timestamp of last commit)
    */
-  async getSignalLastUpdate(path: string): Promise<Date | null> {
+  async getContentLastUpdate(path: string): Promise<Date | null> {
     const commits = await this.getRecentCommits(path, 1);
     return commits[0]?.date || null;
   },

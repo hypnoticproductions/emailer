@@ -1,58 +1,90 @@
 'use client';
 
-import { useState } from 'react';
-import { RefreshCw, Check, AlertCircle, GitBranch, Clock, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { RefreshCw, Check, AlertCircle, GitBranch, FileText, Send, Mail } from 'lucide-react';
 
-interface Signal {
+interface Content {
   title: string;
-  date: string;
-  signals: Array<{
-    id: string;
-    title: string;
-    source: string;
-    signal: string;
-    tradeAngle: string;
-    morphicFit: string;
-  }>;
+  subject: string;
+  from?: string;
+  date?: string;
+  edition?: string;
   rawContent: string;
+  fileName: string;
+  type: 'newsletter' | 'proposal';
 }
 
 interface SignalFetcherProps {
-  onSignalFetched: (signal: Signal, newsletterId: string) => void;
+  onSignalFetched: (content: Content, newsletterId: string) => void;
 }
 
 export default function SignalFetcher({ onSignalFetched }: SignalFetcherProps) {
+  const [contentType, setContentType] = useState<'newsletter' | 'proposal'>('newsletter');
+  const [availableFiles, setAvailableFiles] = useState<any[]>([]);
+  const [selectedFile, setSelectedFile] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [signal, setSignal] = useState<Signal | null>(null);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [content, setContent] = useState<Content | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [commits, setCommits] = useState<any[]>([]);
 
-  const fetchSignal = async () => {
+  // Fetch available files when content type changes
+  useEffect(() => {
+    fetchAvailableFiles();
+  }, [contentType]);
+
+  const fetchAvailableFiles = async () => {
+    setLoadingFiles(true);
+    try {
+      const res = await fetch(`/api/content/list?type=${contentType}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to list files');
+      }
+
+      const files = contentType === 'newsletter' ? data.newsletters : data.proposals;
+      setAvailableFiles(files);
+
+      // Auto-select the first non-template file
+      const defaultFile = files.find((f: any) => !f.name.includes('template'));
+      if (defaultFile) {
+        setSelectedFile(defaultFile.name);
+      } else if (files.length > 0) {
+        setSelectedFile(files[0].name);
+      }
+    } catch (err) {
+      console.error('Failed to fetch files:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load files');
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  const fetchContent = async () => {
+    if (!selectedFile) {
+      setError('Please select a file');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      // Fetch signal
-      const signalRes = await fetch('/api/fetch-signal');
-      const signalData = await signalRes.json();
+      const res = await fetch(`/api/fetch-signal?type=${contentType}&filename=${selectedFile}`);
+      const data = await res.json();
 
-      if (!signalRes.ok) {
-        throw new Error(signalData.error || 'Failed to fetch signal');
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to fetch content');
       }
 
-      setSignal(signalData.signal);
-      setLastUpdate(signalData.lastUpdated);
-      onSignalFetched(signalData.signal, signalData.newsletterId);
-
-      // Fetch status (commit history)
-      const statusRes = await fetch('/api/signal-status');
-      const statusData = await statusRes.json();
-      setCommits(statusData.commits || []);
+      setContent(data.content);
+      setLastUpdate(data.lastUpdated);
+      onSignalFetched(data.content, data.newsletterId);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMsg);
-      console.error('Fetch signal error:', err);
+      console.error('Fetch content error:', err);
     } finally {
       setLoading(false);
     }
@@ -64,24 +96,84 @@ export default function SignalFetcher({ onSignalFetched }: SignalFetcherProps) {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-blue-600 rounded-xl shadow-md">
-            <GitBranch className="w-6 h-6 text-white" />
+            <Mail className="w-6 h-6 text-white" />
           </div>
           <div>
             <h3 className="text-xl font-bold text-gray-900">
-              Morphic Trade Signal
+              Content Distribution
             </h3>
-            <p className="text-sm text-gray-600">Live from MANUS (Quintapoo)</p>
+            <p className="text-sm text-gray-600">Newsletters & Proposals from GitHub</p>
           </div>
         </div>
-        <span className="text-xs bg-blue-600 text-white px-4 py-2 rounded-full font-semibold shadow-sm">
-          🔴 LIVE
+        <span className="text-xs bg-green-600 text-white px-4 py-2 rounded-full font-semibold shadow-sm">
+          🟢 Connected to MANUS
         </span>
+      </div>
+
+      {/* Content Type Selection */}
+      <div className="mb-6">
+        <label className="block text-sm font-bold text-gray-700 mb-3">
+          📁 Content Type
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => setContentType('newsletter')}
+            className={`p-4 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
+              contentType === 'newsletter'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg scale-105'
+                : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-blue-300'
+            }`}
+          >
+            <FileText className="w-5 h-5" />
+            Newsletter
+          </button>
+          <button
+            onClick={() => setContentType('proposal')}
+            className={`p-4 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
+              contentType === 'proposal'
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg scale-105'
+                : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-purple-300'
+            }`}
+          >
+            <Send className="w-5 h-5" />
+            Proposal
+          </button>
+        </div>
+      </div>
+
+      {/* File Selection */}
+      <div className="mb-6">
+        <label className="block text-sm font-bold text-gray-700 mb-3">
+          📄 Select File
+        </label>
+        {loadingFiles ? (
+          <div className="bg-white p-4 rounded-xl border border-gray-200 flex items-center justify-center gap-3 text-gray-500">
+            <RefreshCw className="w-5 h-5 animate-spin" />
+            Loading files...
+          </div>
+        ) : availableFiles.length === 0 ? (
+          <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-200 text-yellow-700 text-sm">
+            No {contentType}s found in repository
+          </div>
+        ) : (
+          <select
+            value={selectedFile}
+            onChange={(e) => setSelectedFile(e.target.value)}
+            className="w-full p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-900 font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-200 transition-all"
+          >
+            {availableFiles.map((file) => (
+              <option key={file.name} value={file.name}>
+                {file.name.replace('.md', '').replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Fetch Button */}
       <button
-        onClick={fetchSignal}
-        disabled={loading}
+        onClick={fetchContent}
+        disabled={loading || !selectedFile}
         className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-xl font-bold text-lg hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 mb-6 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
       >
         {loading ? (
@@ -92,7 +184,7 @@ export default function SignalFetcher({ onSignalFetched }: SignalFetcherProps) {
         ) : (
           <>
             <RefreshCw className="w-5 h-5" />
-            Fetch Latest Signal
+            Load {contentType === 'newsletter' ? 'Newsletter' : 'Proposal'}
           </>
         )}
       </button>
@@ -102,7 +194,7 @@ export default function SignalFetcher({ onSignalFetched }: SignalFetcherProps) {
         <div className="flex items-center gap-3 text-green-700 bg-green-50 p-4 rounded-xl mb-6 border border-green-200">
           <Check className="w-5 h-5" />
           <span className="font-semibold">
-            Signal updated: {new Date(lastUpdate).toLocaleString()}
+            Content loaded: {new Date(lastUpdate).toLocaleString()}
           </span>
         </div>
       )}
@@ -115,71 +207,50 @@ export default function SignalFetcher({ onSignalFetched }: SignalFetcherProps) {
         </div>
       )}
 
-      {/* Signal Preview */}
-      {signal && (
+      {/* Content Preview */}
+      {content && (
         <div className="space-y-4">
-          <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">
-              📊 Signals in This Update
+          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">
+              {contentType === 'newsletter' ? '📰 Newsletter Preview' : '📧 Proposal Preview'}
             </p>
-            <div className="grid grid-cols-1 gap-3">
-              {signal.signals.map((s, idx) => (
-                <div
-                  key={s.id}
-                  className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm">
-                      {idx + 1}
-                    </span>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-gray-900 mb-1">{s.title}</h4>
-                      <p className="text-xs text-gray-600">{s.source}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Commit History */}
-      {commits.length > 0 && (
-        <div className="mt-6 pt-6 border-t-2 border-blue-200">
-          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">
-            📝 Recent Updates from GitHub
-          </p>
-          <div className="space-y-3">
-            {commits.map((commit, idx) => (
-              <div
-                key={idx}
-                className="bg-white p-4 rounded-xl border border-gray-200 hover:border-blue-300 transition-colors"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 p-2 bg-gray-100 rounded-lg">
-                    <code className="text-xs font-mono text-blue-600 font-bold">
-                      {commit.sha}
-                    </code>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-gray-800 mb-1">
-                      {commit.message}
-                    </p>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <span className="flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {commit.author}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {new Date(commit.date).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
+            <div className="space-y-3">
+              <div className="pb-3 border-b border-gray-200">
+                <p className="text-xs font-semibold text-gray-500 mb-1">Subject Line</p>
+                <p className="text-lg font-bold text-gray-900">{content.subject}</p>
+              </div>
+
+              {content.from && (
+                <div className="pb-3 border-b border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 mb-1">From</p>
+                  <p className="text-sm text-gray-800">{content.from}</p>
+                </div>
+              )}
+
+              {content.date && (
+                <div className="pb-3 border-b border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 mb-1">Date</p>
+                  <p className="text-sm text-gray-800">{content.date}</p>
+                </div>
+              )}
+
+              {content.edition && (
+                <div className="pb-3 border-b border-gray-200">
+                  <p className="text-xs font-semibold text-gray-500 mb-1">Edition</p>
+                  <p className="text-sm text-gray-800">{content.edition}</p>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-2">Content Preview</p>
+                <div className="bg-gray-50 p-4 rounded-lg max-h-64 overflow-y-auto">
+                  <pre className="text-xs text-gray-700 font-mono whitespace-pre-wrap">
+                    {content.rawContent.substring(0, 500)}...
+                  </pre>
                 </div>
               </div>
-            ))}
+            </div>
           </div>
         </div>
       )}

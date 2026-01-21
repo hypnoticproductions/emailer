@@ -4,24 +4,30 @@ import { githubClient } from '@/lib/github';
 
 export async function GET(request: NextRequest) {
   try {
-    const signalPath = 'wukr_wire_signals_jan21.md';
+    const { searchParams } = new URL(request.url);
+    const type = (searchParams.get('type') as 'newsletter' | 'proposal') || 'newsletter';
+    const filename = searchParams.get('filename') || 'wukr_wire_jan21_2026.md';
 
-    const lastUpdate = await githubClient.getSignalLastUpdate(signalPath);
+    const folder = type === 'newsletter' ? 'newsletters' : 'proposals';
+    const contentPath = `${folder}/${filename}`;
 
-    const commits = await githubClient.getRecentCommits(signalPath, 5);
+    const lastUpdate = await githubClient.getContentLastUpdate(contentPath);
+
+    const commits = await githubClient.getRecentCommits(contentPath, 5);
 
     return NextResponse.json({
       lastUpdate,
       commits,
-      status: 'Signal is live and updating',
+      status: 'Content is live and updating',
       repository: `${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}`,
-      signalPath,
+      contentPath,
+      type,
     });
   } catch (error) {
     console.error('Status check error:', error);
     return NextResponse.json(
       {
-        status: 'Error checking signal status',
+        status: 'Error checking content status',
         error: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }

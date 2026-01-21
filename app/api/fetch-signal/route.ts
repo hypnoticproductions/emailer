@@ -1,48 +1,60 @@
-// app/api/fetch-signal/route.ts
+// app/api/fetch-signal/route.ts - Fetch newsletter or proposal content
 import { NextRequest, NextResponse } from 'next/server';
 import { githubClient } from '@/lib/github';
 import { db } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
-    // Fetch latest Morphic Trade Signal from GitHub
-    const signal = await githubClient.getLatestSignal();
+    const { searchParams } = new URL(request.url);
+    const type = (searchParams.get('type') as 'newsletter' | 'proposal') || 'newsletter';
+    const filename = searchParams.get('filename');
 
-    if (!signal) {
+    let content: any;
+
+    if (filename) {
+      // Fetch specific file
+      content = await githubClient.getContentByName(filename, type);
+    } else {
+      // Fetch latest content
+      content = await githubClient.getLatestContent(type);
+    }
+
+    if (!content) {
       return NextResponse.json(
-        { error: 'Signal not found in repository' },
+        { error: 'Content not found in repository' },
         { status: 404 }
       );
     }
 
-    // Store in database for reference (optional)
+    // Store in database for reference
     const stored = await db.createNewsletter(
-      `${signal.title} - ${new Date().toLocaleDateString()}`,
-      signal.rawContent,
-      signal
+      content.subject || content.title,
+      content.rawContent,
+      {
+        ...content,
+        contentType: type,
+        fileName: content.fileName,
+      }
     );
 
     // Get commit history
-    const commits = await githubClient.getRecentCommits(
-      'wukr_wire_signals_jan21.md',
-      1
-    );
+    const commits = await githubClient.getRecentCommits(content.filePath, 1);
 
     return NextResponse.json({
-      signal,
+      content,
       stored: true,
       newsletterId: stored.id,
       lastUpdated: commits[0]?.date,
-      source: 'GitHub - Quintapoo Memory Repository',
+      source: `GitHub - ${type === 'newsletter' ? 'Newsletters' : 'Proposals'} Folder`,
     });
   } catch (error) {
-    console.error('Fetch signal error:', error);
+    console.error('Fetch content error:', error);
     return NextResponse.json(
       {
         error:
           error instanceof Error
             ? error.message
-            : 'Failed to fetch signal from GitHub',
+            : 'Failed to fetch content from GitHub',
       },
       { status: 500 }
     );
