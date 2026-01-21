@@ -1,40 +1,37 @@
-// app/api/setup/route.ts
+// app/api/setup/route.ts - Initialize database without Prisma!
 import { NextRequest, NextResponse } from 'next/server';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execPromise = promisify(exec);
+import { initializeDatabase } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
     console.log('🔧 Starting database setup...');
 
     // Check if DATABASE_URL exists
-    const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL;
+    const databaseUrl = process.env.DATABASE_URL;
 
     if (!databaseUrl) {
       return NextResponse.json(
         {
           error: 'DATABASE_URL not found',
-          message: 'Please configure your database connection in Vercel environment variables.',
+          message: 'Please configure your Supabase database connection in Vercel environment variables.',
         },
         { status: 500 }
       );
     }
 
-    console.log('📦 Pushing database schema...');
+    console.log('📦 Creating database tables...');
 
-    // Run prisma db push to create/update tables
-    const { stdout, stderr } = await execPromise('npx prisma db push --accept-data-loss');
+    // Initialize database (creates all tables)
+    await initializeDatabase();
 
-    console.log('✅ Database schema pushed successfully');
+    console.log('✅ Database setup complete!');
 
     return NextResponse.json({
       success: true,
       message: '✅ Database setup complete! All tables have been created.',
       details: {
-        stdout: stdout.toString(),
-        stderr: stderr.toString(),
+        tables: ['contacts', 'newsletters', 'emails_sent'],
+        database: 'Supabase PostgreSQL (Direct connection - no Prisma)',
       },
     });
   } catch (error) {
@@ -48,7 +45,7 @@ export async function GET(request: NextRequest) {
           error instanceof Error
             ? error.message
             : 'An unknown error occurred during database setup',
-        details: error,
+        details: error instanceof Error ? error.stack : null,
       },
       { status: 500 }
     );

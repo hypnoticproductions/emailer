@@ -1,4 +1,4 @@
-// app/api/send/route.ts
+// app/api/send/route.ts - Using raw PostgreSQL
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { claudeClient } from '@/lib/claude';
@@ -17,13 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get contacts for selected segments
-    const contacts = await db.contact.findMany({
-      where: {
-        sector: {
-          in: segments,
-        },
-      },
-    });
+    const contacts = await db.getContacts(segments);
 
     if (contacts.length === 0) {
       return NextResponse.json(
@@ -32,22 +26,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find or create newsletter record
-    let newsletterRecord = await db.newsletter.findFirst({
-      where: {
-        title: newsletter.title,
-      },
-    });
-
-    if (!newsletterRecord) {
-      newsletterRecord = await db.newsletter.create({
-        data: {
-          title: newsletter.title,
-          content: newsletter.content,
-          signal: signal,
-        },
-      });
-    }
+    // Create newsletter record
+    const newsletterRecord = await db.createNewsletter(
+      newsletter.title,
+      newsletter.content,
+      signal
+    );
 
     // Send personalized emails
     const emailResults = [];
@@ -72,18 +56,15 @@ export async function POST(request: NextRequest) {
         });
 
         // Record email sent in database
-        await db.emailSent.create({
-          data: {
-            contactId: contact.id,
-            newsletterId: newsletterRecord.id,
-            subject: newsletter.title,
-            htmlContent: html,
-            textContent: text,
-            resendId: emailData?.id,
-            status: 'sent',
-            sentAt: new Date(),
-            sector: contact.sector,
-          },
+        await db.createEmailSent({
+          contactId: contact.id,
+          newsletterId: newsletterRecord.id,
+          subject: newsletter.title,
+          htmlContent: html,
+          textContent: text,
+          resendId: emailData?.id,
+          status: 'sent',
+          sector: contact.sector,
         });
 
         emailResults.push({
@@ -100,15 +81,13 @@ export async function POST(request: NextRequest) {
         console.error(`Failed to send email to ${contact.email}:`, error);
 
         // Record failed email
-        await db.emailSent.create({
-          data: {
-            contactId: contact.id,
-            newsletterId: newsletterRecord.id,
-            subject: newsletter.title,
-            htmlContent: '',
-            status: 'failed',
-            sector: contact.sector,
-          },
+        await db.createEmailSent({
+          contactId: contact.id,
+          newsletterId: newsletterRecord.id,
+          subject: newsletter.title,
+          htmlContent: '',
+          status: 'failed',
+          sector: contact.sector,
         });
 
         emailResults.push({
@@ -120,12 +99,6 @@ export async function POST(request: NextRequest) {
         failureCount++;
       }
     }
-
-    // Update newsletter sentAt timestamp
-    await db.newsletter.update({
-      where: { id: newsletterRecord.id },
-      data: { sentAt: new Date() },
-    });
 
     return NextResponse.json({
       success: true,

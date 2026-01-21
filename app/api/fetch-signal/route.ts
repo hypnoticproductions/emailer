@@ -16,13 +16,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Store in database for reference (optional)
-    const stored = await db.newsletter.create({
-      data: {
-        title: `${signal.title} - ${new Date().toLocaleDateString()}`,
-        content: signal.rawContent,
-        signal: signal,
-      },
-    });
+    const stored = await db.createNewsletter(
+      `${signal.title} - ${new Date().toLocaleDateString()}`,
+      signal.rawContent,
+      signal
+    );
 
     // Get commit history
     const commits = await githubClient.getRecentCommits(
