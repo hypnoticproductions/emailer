@@ -16,7 +16,9 @@ function getPrismaClient(): PrismaClient {
     return globalThis.prisma;
   }
 
-  const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_PRISMA_URL;
+  // Use POSTGRES_PRISMA_URL first (optimized for Prisma), fall back to DATABASE_URL
+  // For Vercel Postgres, POSTGRES_PRISMA_URL is the connection pooling URL
+  let connectionString = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL;
 
   if (!connectionString) {
     throw new Error(
@@ -24,13 +26,23 @@ function getPrismaClient(): PrismaClient {
     );
   }
 
+  // Ensure SSL mode is set for Vercel Postgres
+  if (!connectionString.includes('sslmode=')) {
+    const separator = connectionString.includes('?') ? '&' : '?';
+    connectionString = `${connectionString}${separator}sslmode=require`;
+  }
+
   // Create pool if it doesn't exist
   if (!globalThis.pool) {
     globalThis.pool = new Pool({
       connectionString,
       ssl: {
-        rejectUnauthorized: false, // Accept self-signed certificates from Vercel Postgres
+        rejectUnauthorized: false, // Accept Vercel's SSL certificates
       },
+      // Additional connection options for better reliability
+      max: 20, // Maximum number of clients in the pool
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
     });
   }
 
