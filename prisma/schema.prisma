@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Contact model - stores your 108 contacts with sector segmentation
+model Contact {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  firstName String?
+  lastName  String?
+  company   String?
+  title     String?
+  sector    String   // fintech, clean_energy, tech_web3, tourism, agriculture, music_creative, government, other
+  linkedIn  String?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  emailsSent EmailSent[]
+
+  @@index([sector])
+  @@index([email])
+}
+
+// Newsletter model - stores the signal data and newsletter content
+model Newsletter {
+  id        String   @id @default(cuid())
+  title     String
+  content   String   @db.Text
+  signal    Json?    // Stores the morphic signal data
+
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  emailsSent EmailSent[]
+}
+
+// EmailSent model - tracks individual emails sent to contacts
+model EmailSent {
+  id           String   @id @default(cuid())
+
+  // Foreign keys
+  contactId    String
+  contact      Contact  @relation(fields: [contactId], references: [id])
+
+  newsletterId String
+  newsletter   Newsletter @relation(fields: [newsletterId], references: [id])
+
+  // Email details
+  subject      String
+  htmlContent  String   @db.Text
+  textContent  String?  @db.Text
+
+  // Resend tracking
+  resendId     String?  @unique
+
+  // Status tracking
+  status       String   @default("pending") // pending, sent, delivered, failed
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  openedAt     DateTime?
+  clickedAt    DateTime?
+  repliedAt    DateTime?
+
+  // Metadata
+  sector       String   // Which sector this email was sent to
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([contactId])
+  @@index([newsletterId])
+  @@index([status])
+  @@index([sector])
+  @@index([resendId])
+}
