@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Loader2, CheckCircle, AlertCircle, Send, Users, TrendingUp } from 'lucide-react';
 import SignalFetcher from './SignalFetcher';
+import ImportContacts from './ImportContacts';
 
 const SECTORS = [
   { id: 'fintech', label: 'Fintech', emoji: '💳', color: 'from-blue-400 to-blue-600' },
@@ -94,6 +95,9 @@ export default function SendForm() {
 
   return (
     <div className="space-y-8">
+      {/* Import Contacts from GitHub CSV */}
+      <ImportContacts />
+
       {/* Signal Fetcher - Connected to GitHub */}
       <SignalFetcher onSignalFetched={handleSignalFetched} />
 
