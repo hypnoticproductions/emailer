@@ -6,7 +6,7 @@ declare global {
   var supabase: SupabaseClient | undefined;
 }
 
-// Create Supabase client
+// Create Supabase client (lazy initialization)
 function getSupabaseClient(): SupabaseClient {
   if (globalThis.supabase) {
     return globalThis.supabase;
@@ -29,12 +29,11 @@ function getSupabaseClient(): SupabaseClient {
   return globalThis.supabase;
 }
 
-export const supabase = getSupabaseClient();
-
 // Database initialization - create tables if they don't exist
 export async function initializeDatabase() {
   try {
     // Create Contact table
+    const supabase = getSupabaseClient();
     const { error: contactsError } = await supabase.rpc('exec_sql', {
       sql: `
         CREATE TABLE IF NOT EXISTS contacts (
@@ -136,6 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_emails_sent_resend_id ON emails_sent(resend_id);`
 export const db = {
   // Contacts
   async getContacts(sectors?: string[]) {
+    const supabase = getSupabaseClient();
     let query = supabase.from('contacts').select('*');
 
     if (sectors && sectors.length > 0) {
@@ -149,6 +149,7 @@ export const db = {
   },
 
   async countContacts() {
+    const supabase = getSupabaseClient();
     const { count, error } = await supabase
       .from('contacts')
       .select('*', { count: 'exact', head: true });
@@ -158,6 +159,7 @@ export const db = {
   },
 
   async getContactsBySector() {
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('contacts')
       .select('sector');
@@ -179,6 +181,7 @@ export const db = {
 
   // Newsletters
   async createNewsletter(title: string, content: string, signal: any) {
+    const supabase = getSupabaseClient();
     const id = `newsletter_${Date.now()}`;
     const { data, error } = await supabase
       .from('newsletters')
@@ -196,6 +199,7 @@ export const db = {
   },
 
   async getRecentNewsletters(limit: number = 5) {
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('newsletters')
       .select('*')
@@ -208,6 +212,7 @@ export const db = {
 
   // Email tracking
   async createEmailSent(emailData: any) {
+    const supabase = getSupabaseClient();
     const id = `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const { data, error } = await supabase
       .from('emails_sent')
@@ -231,6 +236,7 @@ export const db = {
   },
 
   async getEmailStats() {
+    const supabase = getSupabaseClient();
     // Get total count
     const { count: total } = await supabase
       .from('emails_sent')
@@ -277,6 +283,7 @@ export const db = {
   },
 
   async updateEmailStatus(resendId: string, updates: any) {
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('emails_sent')
       .update(updates)
