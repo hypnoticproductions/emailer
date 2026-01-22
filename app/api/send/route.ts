@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
 
         successCount++;
 
-        // Rate limiting - wait 100ms between emails
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        // Rate limiting - wait 600ms between emails (Resend limit: 2/second)
+        await new Promise((resolve) => setTimeout(resolve, 600));
       } catch (error) {
         console.error(`Failed to send email to ${contact.email}:`, error);
 
