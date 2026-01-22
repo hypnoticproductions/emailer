@@ -149,7 +149,8 @@ export async function POST(request: NextRequest) {
         );
 
         if (insertError) {
-          console.error('Insert error:', insertError);
+          console.error('Insert error for', contact.email, ':', insertError);
+          throw new Error(`Database insert failed: ${insertError.message}`);
         }
 
         successCount++;
@@ -157,34 +158,42 @@ export async function POST(request: NextRequest) {
           email: contact.email,
           success: true,
           resendId: result?.id,
+          dbInserted: true,
         });
 
         // Rate limiting - wait 600ms between emails (Resend limit: 2/second)
         await new Promise((resolve) => setTimeout(resolve, 600));
       } catch (error) {
         failCount++;
-        console.error(`Failed to send to ${contact.email}:`, error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Failed to send to ${contact.email}:`, errorMessage);
+        console.error('Full error:', error);
 
-        // Store failure in database
-        await supabase.from('emails_sent').upsert(
-          {
-            id: `email_${contact.id}_${newsletterId}`,
-            contact_id: contact.id,
-            newsletter_id: newsletterId,
-            subject: subject,
-            html_content: '',
-            text_content: '',
-            status: 'failed',
-            sent_at: new Date().toISOString(),
-            sector: contact.sector,
-          },
-          { onConflict: 'id', ignoreDuplicates: false }
-        );
+        // Try to store failure in database
+        try {
+          await supabase.from('emails_sent').upsert(
+            {
+              id: `email_${contact.id}_${newsletterId}`,
+              contact_id: contact.id,
+              newsletter_id: newsletterId,
+              subject: subject,
+              html_content: '',
+              text_content: '',
+              status: 'failed',
+              sent_at: new Date().toISOString(),
+              sector: contact.sector,
+            },
+            { onConflict: 'id', ignoreDuplicates: false }
+          );
+        } catch (dbError) {
+          console.error('Failed to store error in database:', dbError);
+        }
 
         results.push({
           email: contact.email,
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: errorMessage,
+          errorType: error instanceof Error ? error.constructor.name : 'Unknown',
         });
       }
     }
