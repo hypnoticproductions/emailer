@@ -12,6 +12,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import ManageContacts from './ManageContacts';
+import ResumeFailed from './ResumeFailed';
 
 interface DashboardStats {
   contacts: {
@@ -342,6 +343,9 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Resume Failed Sends */}
+      <ResumeFailed />
 
       {/* Manage Contacts */}
       <ManageContacts />
