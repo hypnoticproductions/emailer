@@ -69,8 +69,8 @@ export async function POST(request: NextRequest) {
             .from('emails_sent')
             .update({
               status: dbStatus,
-              opened_at: result.status.last_event === 'email.opened' ? new Date().toISOString() : email.opened_at,
-              clicked_at: result.status.last_event === 'email.clicked' ? new Date().toISOString() : email.clicked_at,
+              opened_at: result.status.last_event === 'opened' ? new Date().toISOString() : email.opened_at,
+              clicked_at: result.status.last_event === 'clicked' ? new Date().toISOString() : email.clicked_at,
             })
             .eq('id', email.id);
 
