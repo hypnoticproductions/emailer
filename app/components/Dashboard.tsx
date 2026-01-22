@@ -46,6 +46,8 @@ export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchStats = async () => {
     setLoading(true);
@@ -72,6 +74,36 @@ export default function Dashboard() {
   useEffect(() => {
     fetchStats();
   }, []);
+
+  const syncEmailStatus = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+
+    try {
+      const res = await fetch('/api/sync-status', { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to sync status');
+      }
+
+      setSyncMessage({
+        type: 'success',
+        text: `Successfully synced ${data.synced} email statuses from Resend`,
+      });
+
+      // Refresh dashboard stats
+      fetchStats();
+
+      // Clear message after 5 seconds
+      setTimeout(() => setSyncMessage(null), 5000);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      setSyncMessage({ type: 'error', text: errorMsg });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -101,14 +133,42 @@ export default function Dashboard() {
           <h2 className="text-3xl font-bold text-gray-900">📊 Dashboard</h2>
           <p className="text-gray-600 mt-1">Real-time engagement metrics</p>
         </div>
-        <button
-          onClick={fetchStats}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={syncEmailStatus}
+            disabled={syncing}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing...' : 'Sync Status'}
+          </button>
+          <button
+            onClick={fetchStats}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-semibold"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {/* Sync Message */}
+      {syncMessage && (
+        <div
+          className={`flex items-center gap-3 p-4 rounded-xl border ${
+            syncMessage.type === 'success'
+              ? 'bg-green-50 text-green-700 border-green-200'
+              : 'bg-red-50 text-red-700 border-red-200'
+          }`}
+        >
+          {syncMessage.type === 'success' ? (
+            <RefreshCw className="w-5 h-5" />
+          ) : (
+            <RefreshCw className="w-5 h-5" />
+          )}
+          <span className="font-semibold">{syncMessage.text}</span>
+        </div>
+      )}
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
