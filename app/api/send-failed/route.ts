@@ -32,9 +32,17 @@ export async function POST(request: NextRequest) {
       throw new Error('Newsletter not found');
     }
 
-    // Parse newsletter metadata
-    const metadata = newsletter.metadata as any;
+    // Parse newsletter metadata - handle missing metadata column gracefully
+    const metadata = newsletter.metadata || newsletter.signal || {};
     const subject = metadata?.subject || newsletter.title;
+    const content = metadata?.rawContent || newsletter.content || '';
+
+    if (!content) {
+      return NextResponse.json(
+        { error: 'Newsletter content is missing' },
+        { status: 400 }
+      );
+    }
 
     // Get all contacts (filtered by sector if provided)
     let contactsQuery = supabase.from('contacts').select('*');
@@ -100,10 +108,18 @@ export async function POST(request: NextRequest) {
 
     for (const contact of failedContacts) {
       try {
+        // Ensure metadata has required content field
+        const emailMetadata = {
+          ...metadata,
+          rawContent: content,
+          subject: subject,
+          title: newsletter.title,
+        };
+
         // Generate personalized email using Claude
         const { html, text } = await claudeClient.generatePersonalizedMarkdownEmail(
           contact,
-          metadata,
+          emailMetadata,
           newsletter.title
         );
 
@@ -121,8 +137,9 @@ export async function POST(request: NextRequest) {
             id: `email_${contact.id}_${newsletterId}`,
             contact_id: contact.id,
             newsletter_id: newsletterId,
-            to_email: contact.email,
             subject: subject,
+            html_content: html,
+            text_content: text,
             status: 'sent',
             sent_at: new Date().toISOString(),
             resend_id: result?.id || null,
@@ -154,8 +171,9 @@ export async function POST(request: NextRequest) {
             id: `email_${contact.id}_${newsletterId}`,
             contact_id: contact.id,
             newsletter_id: newsletterId,
-            to_email: contact.email,
             subject: subject,
+            html_content: '',
+            text_content: '',
             status: 'failed',
             sent_at: new Date().toISOString(),
             sector: contact.sector,
