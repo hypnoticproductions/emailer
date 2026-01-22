@@ -22,7 +22,7 @@ export const emailClient = {
   async sendEmail(options: EmailOptions) {
     try {
       const { data, error } = await resend.emails.send({
-        from: options.from || 'WUKR Wire <onboarding@resend.dev>',
+        from: options.from || 'WUKR Wire <signal@dopa.buzz>',
         to: options.to,
         subject: options.subject,
         html: options.html,
