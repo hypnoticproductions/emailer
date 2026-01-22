@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     // Fetch emails that have a resend_id (successfully sent to Resend)
     const { data: emails, error: fetchError } = await supabase
       .from('emails_sent')
-      .select('id, resend_id, status, to_email')
+      .select('id, resend_id, status, to_email, opened_at, clicked_at')
       .not('resend_id', 'is', null)
       .order('sent_at', { ascending: false })
       .limit(limit);
