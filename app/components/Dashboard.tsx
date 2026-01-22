@@ -11,6 +11,7 @@ import {
   BarChart3,
   RefreshCw,
 } from 'lucide-react';
+import ManageContacts from './ManageContacts';
 
 interface DashboardStats {
   contacts: {
@@ -281,6 +282,9 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Manage Contacts */}
+      <ManageContacts />
     </div>
   );
 }
