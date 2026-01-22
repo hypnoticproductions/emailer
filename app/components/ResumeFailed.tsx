@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { RotateCcw, AlertTriangle, Check, Mail } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
 
 interface Newsletter {
   id: string;
@@ -24,20 +23,14 @@ export default function ResumeFailed() {
 
   const fetchNewsletters = async () => {
     try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
+      const res = await fetch('/api/newsletters/list');
+      const data = await res.json();
 
-      const { data, error } = await supabase
-        .from('newsletters')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to fetch newsletters');
+      }
 
-      if (error) throw error;
-
-      setNewsletters(data || []);
+      setNewsletters(data.newsletters || []);
     } catch (error) {
       console.error('Error fetching newsletters:', error);
     }

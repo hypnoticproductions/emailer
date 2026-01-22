@@ -14,9 +14,10 @@ export async function POST(request: NextRequest) {
     );
 
     // Fetch emails that have a resend_id (successfully sent to Resend)
+    // Join with contacts to get email address
     const { data: emails, error: fetchError } = await supabase
       .from('emails_sent')
-      .select('id, resend_id, status, to_email, opened_at, clicked_at')
+      .select('id, resend_id, status, opened_at, clicked_at, contact_id, contacts(email)')
       .not('resend_id', 'is', null)
       .order('sent_at', { ascending: false })
       .limit(limit);
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
           if (!updateError) {
             syncedCount++;
             updates.push({
-              email: email.to_email,
+              email: (email as any).contacts?.email || 'unknown',
               oldStatus: email.status,
               newStatus: dbStatus,
               lastEvent: result.status.last_event,

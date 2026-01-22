@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS newsletters (
   title TEXT NOT NULL,
   content TEXT NOT NULL,
   signal JSONB,
+  metadata JSONB,
   sent_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
