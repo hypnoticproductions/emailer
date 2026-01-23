@@ -1,28 +1,5 @@
-// scripts/seed-contacts.ts - Seed sample contacts for testing
-import { createClient } from '@supabase/supabase-js';
+import { getSQLiteClient } from '../lib/sqlite-client';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error('❌ Missing Supabase credentials in environment');
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-const SECTORS = [
-  'fintech',
-  'clean_energy',
-  'tech_web3',
-  'tourism',
-  'agriculture',
-  'music_creative',
-  'government',
-  'other',
-];
-
-// Sample contacts for testing
 const sampleContacts = [
   {
     id: 'contact_1',
@@ -115,37 +92,47 @@ const sampleContacts = [
 ];
 
 async function seedContacts() {
-  console.log('🌱 Seeding contacts...');
+  console.log('🌱 Seeding SQLite database with contacts...');
 
   try {
-    // Check if contacts already exist
-    const { count } = await supabase
-      .from('contacts')
-      .select('*', { count: 'exact', head: true });
+    const db = getSQLiteClient();
 
-    if (count && count > 0) {
-      console.log(`ℹ️  Found ${count} existing contacts`);
-      console.log('   Would you like to add more or skip seeding?');
-      console.log('   To reset, delete all contacts first in Supabase dashboard');
+    const countResult = db.prepare('SELECT COUNT(*) as count FROM contacts').get() as { count: number };
+
+    if (countResult.count > 0) {
+      console.log(`ℹ️  Found ${countResult.count} existing contacts`);
+      console.log('   Database already has contacts. Skipping seed.');
       return;
     }
 
-    // Insert sample contacts
-    const { data, error } = await supabase
-      .from('contacts')
-      .insert(sampleContacts)
-      .select();
+    const stmt = db.prepare(`
+      INSERT INTO contacts (id, email, first_name, last_name, company, title, sector, linkedin, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
 
-    if (error) {
-      console.error('❌ Failed to seed contacts:', error.message);
-      process.exit(1);
-    }
+    const insert = db.transaction((contacts: typeof sampleContacts) => {
+      for (const contact of contacts) {
+        stmt.run(
+          contact.id,
+          contact.email,
+          contact.first_name,
+          contact.last_name,
+          contact.company,
+          contact.title,
+          contact.sector,
+          contact.linkedin,
+          contact.notes
+        );
+      }
+    });
 
-    console.log(`✅ Successfully seeded ${data.length} contacts`);
+    insert(sampleContacts);
+
+    console.log(`✅ Successfully seeded ${sampleContacts.length} contacts`);
     console.log('');
     console.log('📊 Contacts by sector:');
 
-    const bySector = data.reduce((acc: any, contact: any) => {
+    const bySector = sampleContacts.reduce((acc: any, contact: any) => {
       acc[contact.sector] = (acc[contact.sector] || 0) + 1;
       return acc;
     }, {});
@@ -156,10 +143,9 @@ async function seedContacts() {
 
     console.log('');
     console.log('💡 Next steps:');
-    console.log('   1. Configure your API keys in .env');
+    console.log('   1. Start the dev server: npm run dev');
     console.log('   2. Visit /api/health to check system status');
-    console.log('   3. Start the dev server: npm run dev');
-    console.log('   4. Test fetching signals from MANUS');
+    console.log('   3. Test the dashboard and features');
   } catch (error) {
     console.error('❌ Seeding error:', error);
     process.exit(1);

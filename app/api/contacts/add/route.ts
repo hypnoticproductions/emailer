@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/lib/supabase-client';
+import { database } from '@/lib/database-operations';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,40 +13,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const contactId = `contact_${email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-    const supabase = getSupabaseClient();
-
-    const { data, error } = await supabase
-      .from('contacts')
-      .upsert(
-        {
-          id: contactId,
-          email: email.toLowerCase(),
-          company: company || null,
-          sector: sector,
-          first_name: firstName || null,
-          last_name: lastName || null,
-          title: title || null,
-          linkedin: linkedin || null,
-          notes: notes || null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: 'email',
-          ignoreDuplicates: false,
-        }
-      );
-
-    if (error) {
-      console.error('[contacts] Error adding contact:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    const contact = database.addContact({
+      email: email.toLowerCase(),
+      company: company || null,
+      sector: sector,
+      firstName: firstName || null,
+      lastName: lastName || null,
+      title: title || null,
+      linkedin: linkedin || null,
+      notes: notes || null,
+    });
 
     return NextResponse.json({
       success: true,
       message: 'Contact added successfully',
-      contact: { id: contactId, email, company, sector },
+      contact,
     });
   } catch (error) {
     console.error('[contacts] Add contact error:', error);

@@ -1,6 +1,7 @@
 // app/api/send-failed/route.ts - Resend emails to failed recipients
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSQLiteClient } from '@/lib/sqlite-client';
+import { database } from '@/lib/database-operations';
 import { claudeClient } from '@/lib/claude';
 import { emailClient } from '@/lib/resend';
 
@@ -16,23 +17,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    const db = getSQLiteClient();
 
-    // Get the newsletter
-    const { data: newsletter, error: newsletterError } = await supabase
-      .from('newsletters')
-      .select('*')
-      .eq('id', newsletterId)
-      .single();
+    const newsletter = db.prepare('SELECT * FROM newsletters WHERE id = ?').get(newsletterId) as any;
 
-    if (newsletterError || !newsletter) {
+    if (!newsletter) {
       throw new Error('Newsletter not found');
     }
 
-    // Parse newsletter metadata - handle missing metadata column gracefully
+    if (newsletter.signal && typeof newsletter.signal === 'string') {
+      try {
+        newsletter.signal = JSON.parse(newsletter.signal);
+      } catch {}
+    }
+    if (newsletter.metadata && typeof newsletter.metadata === 'string') {
+      try {
+        newsletter.metadata = JSON.parse(newsletter.metadata);
+      } catch {}
+    }
+
     const metadata = newsletter.metadata || newsletter.signal || {};
     const subject = metadata?.subject || newsletter.title;
     const content = metadata?.rawContent || newsletter.content || '';
@@ -44,18 +47,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get all contacts (filtered by sector if provided)
-    let contactsQuery = supabase.from('contacts').select('*');
-
-    if (sectors && sectors.length > 0) {
-      contactsQuery = contactsQuery.in('sector', sectors);
-    }
-
-    const { data: allContacts, error: contactsError } = await contactsQuery;
-
-    if (contactsError) {
-      throw new Error(contactsError.message);
-    }
+    const allContacts = database.getContacts(sectors);
 
     if (!allContacts || allContacts.length === 0) {
       return NextResponse.json({
@@ -66,28 +58,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Get emails that were already sent successfully for this newsletter
-    const { data: sentEmails, error: sentEmailsError } = await supabase
-      .from('emails_sent')
-      .select('contact_id, status')
-      .eq('newsletter_id', newsletterId);
+    const sentEmails = db.prepare(
+      'SELECT contact_id, status FROM emails_sent WHERE newsletter_id = ?'
+    ).all(newsletterId) as Array<{ contact_id: string; status: string }>;
 
-    if (sentEmailsError) {
-      console.error('Error fetching sent emails:', sentEmailsError);
-    }
-
-    // Build a map of contact_id -> status
     const emailStatusMap = new Map<string, string>();
-    if (sentEmails) {
-      sentEmails.forEach((email: any) => {
-        emailStatusMap.set(email.contact_id, email.status);
-      });
-    }
+    sentEmails.forEach((email) => {
+      emailStatusMap.set(email.contact_id, email.status);
+    });
 
-    // Filter to only contacts that failed or never received the email
     const failedContacts = allContacts.filter((contact: any) => {
       const status = emailStatusMap.get(contact.id);
-      // Include if: no email record, failed status, or pending status
       return !status || status === 'failed' || status === 'pending';
     });
 
@@ -101,14 +82,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Send emails to failed contacts
     let successCount = 0;
     let failCount = 0;
     const results: any[] = [];
 
     for (const contact of failedContacts) {
       try {
-        // Ensure metadata has required content field
         const emailMetadata = {
           ...metadata,
           rawContent: content,
@@ -116,14 +95,12 @@ export async function POST(request: NextRequest) {
           title: newsletter.title,
         };
 
-        // Generate personalized email using Claude
         const { html, text } = await claudeClient.generatePersonalizedMarkdownEmail(
           contact,
           emailMetadata,
           newsletter.title
         );
 
-        // Send via Resend
         const result = await emailClient.sendEmail({
           to: contact.email,
           subject: subject,
@@ -131,27 +108,16 @@ export async function POST(request: NextRequest) {
           text: text,
         });
 
-        // Store in database
-        const { error: insertError } = await supabase.from('emails_sent').upsert(
-          {
-            id: `email_${contact.id}_${newsletterId}`,
-            contact_id: contact.id,
-            newsletter_id: newsletterId,
-            subject: subject,
-            html_content: html,
-            text_content: text,
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            resend_id: result?.id || null,
-            sector: contact.sector,
-          },
-          { onConflict: 'id', ignoreDuplicates: false }
-        );
-
-        if (insertError) {
-          console.error('Insert error for', contact.email, ':', insertError);
-          throw new Error(`Database insert failed: ${insertError.message}`);
-        }
+        database.createEmailSent({
+          contactId: contact.id,
+          newsletterId: newsletterId,
+          subject: subject,
+          htmlContent: html,
+          textContent: text,
+          resendId: result?.id || null,
+          status: 'sent',
+          sector: contact.sector,
+        });
 
         successCount++;
         results.push({
@@ -161,30 +127,23 @@ export async function POST(request: NextRequest) {
           dbInserted: true,
         });
 
-        // Rate limiting - wait 600ms between emails (Resend limit: 2/second)
         await new Promise((resolve) => setTimeout(resolve, 600));
       } catch (error) {
         failCount++;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         console.error(`Failed to send to ${contact.email}:`, errorMessage);
-        console.error('Full error:', error);
 
-        // Try to store failure in database
         try {
-          await supabase.from('emails_sent').upsert(
-            {
-              id: `email_${contact.id}_${newsletterId}`,
-              contact_id: contact.id,
-              newsletter_id: newsletterId,
-              subject: subject,
-              html_content: '',
-              text_content: '',
-              status: 'failed',
-              sent_at: new Date().toISOString(),
-              sector: contact.sector,
-            },
-            { onConflict: 'id', ignoreDuplicates: false }
-          );
+          database.createEmailSent({
+            contactId: contact.id,
+            newsletterId: newsletterId,
+            subject: subject,
+            htmlContent: '',
+            textContent: '',
+            resendId: null,
+            status: 'failed',
+            sector: contact.sector,
+          });
         } catch (dbError) {
           console.error('Failed to store error in database:', dbError);
         }

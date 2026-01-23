@@ -37,7 +37,6 @@ function parseCSV(csvText: string): CSVRow[] {
     const line = lines[i];
     if (!line.trim()) continue;
 
-    // Handle CSV with quoted fields
     const values: string[] = [];
     let currentValue = '';
     let insideQuotes = false;
@@ -82,12 +81,10 @@ function mapSectorToStandard(sector: string): string {
     'Education': 'other',
   };
 
-  // Try exact match first
   if (sectorMap[sector]) {
     return sectorMap[sector];
   }
 
-  // Try partial match
   const lowerSector = sector.toLowerCase();
   if (lowerSector.includes('energy') || lowerSector.includes('solar')) {
     return 'clean_energy';
@@ -111,7 +108,7 @@ function mapSectorToStandard(sector: string): string {
 export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const source = searchParams.get('source') || 'both'; // 'phase1', 'master', or 'both'
+    const source = searchParams.get('source') || 'both';
 
     const filesToImport: string[] = [];
 
@@ -139,25 +136,18 @@ export async function POST(request: NextRequest) {
 
         for (const row of rows) {
           try {
-            // Skip if no email
             if (!row.Email || row.Email === 'N/A') {
               totalSkipped++;
               continue;
             }
 
-            // Create contact ID from email
-            const contactId = `contact_${row.Email.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-
-            // Map sector to standard format
             const sector = mapSectorToStandard(row.Sector);
 
-            // Prepare LinkedIn URL
             let linkedinUrl = row.LinkedIn;
             if (linkedinUrl && !linkedinUrl.startsWith('http')) {
               linkedinUrl = `https://linkedin.com${linkedinUrl}`;
             }
 
-            // Create notes with location and other info
             const notesArray = [];
             if (row.Location) notesArray.push(`Location: ${row.Location}`);
             if (row.Phone) notesArray.push(`Phone: ${row.Phone}`);
@@ -166,40 +156,25 @@ export async function POST(request: NextRequest) {
             if (row.Notes) notesArray.push(row.Notes);
             const notes = notesArray.join(' | ');
 
-            // Insert or update contact
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabase = createClient(
-              process.env.NEXT_PUBLIC_SUPABASE_URL!,
-              process.env.SUPABASE_SERVICE_ROLE_KEY!
-            );
-
-            const { data, error } = await supabase
-              .from('contacts')
-              .upsert({
-                id: contactId,
+            try {
+              db.addContact({
                 email: row.Email,
                 company: row['Company Name'],
                 sector: sector,
                 linkedin: linkedinUrl || null,
                 notes: notes || null,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              }, {
-                onConflict: 'email',
-                ignoreDuplicates: false,
               });
 
-            if (error) {
-              console.error(`Error importing ${row['Company Name']}:`, error);
-              errors.push(`${row['Company Name']}: ${error.message}`);
-              totalSkipped++;
-            } else {
               totalImported++;
               importedContacts.push({
                 company: row['Company Name'],
                 email: row.Email,
                 sector: sector,
               });
+            } catch (dbError) {
+              console.error(`Error importing ${row['Company Name']}:`, dbError);
+              errors.push(`${row['Company Name']}: ${dbError}`);
+              totalSkipped++;
             }
           } catch (contactError) {
             console.error(`Error processing row:`, contactError);
@@ -221,8 +196,8 @@ export async function POST(request: NextRequest) {
         totalSkipped,
         filesProcessed: filesToImport.length,
       },
-      errors: errors.length > 0 ? errors.slice(0, 10) : [], // Return first 10 errors
-      sample: importedContacts.slice(0, 5), // Show first 5 imported contacts
+      errors: errors.length > 0 ? errors.slice(0, 10) : [],
+      sample: importedContacts.slice(0, 5),
     });
   } catch (error) {
     console.error('Import contacts error:', error);

@@ -1,291 +1,243 @@
-import { getSupabaseClient } from './supabase-client';
-
-interface RetryOptions {
-  maxAttempts?: number;
-  delayMs?: number;
-}
-
-async function retryOperation<T>(
-  operation: () => Promise<T>,
-  options: RetryOptions = {}
-): Promise<T> {
-  const { maxAttempts = 3, delayMs = 1000 } = options;
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Unknown error');
-      console.warn(`[db] Attempt ${attempt}/${maxAttempts} failed:`, lastError.message);
-
-      if (attempt < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, delayMs * attempt));
-      }
-    }
-  }
-
-  throw lastError || new Error('Operation failed after retries');
-}
+import { getSQLiteClient } from './sqlite-client';
 
 export const database = {
-  async countContacts(): Promise<number> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const { count, error } = await supabase
-        .from('contacts')
-        .select('*', { count: 'exact', head: true });
+  countContacts(): number {
+    const db = getSQLiteClient();
+    const result = db.prepare('SELECT COUNT(*) as count FROM contacts').get() as { count: number };
+    return result.count;
+  },
 
-      if (error) {
-        console.error('[db] Count contacts error:', error);
-        throw new Error(`Failed to count contacts: ${error.message}`);
+  getContactsBySector(): Array<{ sector: string; count: number }> {
+    const db = getSQLiteClient();
+    const results = db.prepare(`
+      SELECT sector, COUNT(*) as count
+      FROM contacts
+      GROUP BY sector
+      ORDER BY count DESC
+    `).all() as Array<{ sector: string; count: number }>;
+
+    return results;
+  },
+
+  getContacts(sectors?: string[]): any[] {
+    const db = getSQLiteClient();
+
+    if (sectors && sectors.length > 0) {
+      const placeholders = sectors.map(() => '?').join(',');
+      const results = db.prepare(`
+        SELECT * FROM contacts
+        WHERE sector IN (${placeholders})
+        ORDER BY created_at DESC
+      `).all(...sectors);
+      return results;
+    }
+
+    const results = db.prepare('SELECT * FROM contacts ORDER BY created_at DESC').all();
+    return results;
+  },
+
+  addContact(contact: any): any {
+    const db = getSQLiteClient();
+    const id = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const stmt = db.prepare(`
+      INSERT INTO contacts (id, email, first_name, last_name, company, title, sector, linkedin, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      contact.email,
+      contact.firstName || null,
+      contact.lastName || null,
+      contact.company || null,
+      contact.title || null,
+      contact.sector || 'other',
+      contact.linkedin || null,
+      contact.notes || null
+    );
+
+    const result = db.prepare('SELECT * FROM contacts WHERE id = ?').get(id);
+    return result;
+  },
+
+  deleteContact(contactId: string): void {
+    const db = getSQLiteClient();
+    db.prepare('DELETE FROM contacts WHERE id = ?').run(contactId);
+  },
+
+  createNewsletter(title: string, content: string, signal: any): any {
+    const db = getSQLiteClient();
+    const id = `newsletter_${Date.now()}`;
+
+    const stmt = db.prepare(`
+      INSERT INTO newsletters (id, title, content, signal)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    stmt.run(id, title, content, JSON.stringify(signal));
+
+    const result = db.prepare('SELECT * FROM newsletters WHERE id = ?').get(id);
+    if (result && typeof result === 'object' && 'signal' in result) {
+      try {
+        (result as any).signal = JSON.parse((result as any).signal);
+      } catch {
+        (result as any).signal = null;
       }
+    }
+    return result;
+  },
 
-      return count || 0;
+  getRecentNewsletters(limit: number = 5): any[] {
+    const db = getSQLiteClient();
+    const results = db.prepare(`
+      SELECT * FROM newsletters
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(limit);
+
+    return results.map((row: any) => {
+      if (row.signal) {
+        try {
+          row.signal = JSON.parse(row.signal);
+        } catch {
+          row.signal = null;
+        }
+      }
+      if (row.metadata) {
+        try {
+          row.metadata = JSON.parse(row.metadata);
+        } catch {
+          row.metadata = null;
+        }
+      }
+      return row;
     });
   },
 
-  async getContactsBySector(): Promise<Array<{ sector: string; count: number }>> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('contacts').select('sector');
+  createEmailSent(emailData: any): any {
+    const db = getSQLiteClient();
+    const id = `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      if (error) {
-        console.error('[db] Get contacts by sector error:', error);
-        throw new Error(`Failed to get contacts by sector: ${error.message}`);
-      }
+    const stmt = db.prepare(`
+      INSERT INTO emails_sent (
+        id, contact_id, newsletter_id, subject, html_content, text_content,
+        resend_id, status, sector, sent_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
 
-      const grouped = (data || []).reduce((acc: Record<string, number>, row) => {
-        const sector = row.sector || 'unknown';
-        acc[sector] = (acc[sector] || 0) + 1;
-        return acc;
-      }, {});
+    stmt.run(
+      id,
+      emailData.contactId,
+      emailData.newsletterId,
+      emailData.subject,
+      emailData.htmlContent,
+      emailData.textContent || '',
+      emailData.resendId,
+      emailData.status || 'pending',
+      emailData.sector
+    );
 
-      return Object.entries(grouped)
-        .map(([sector, count]) => ({ sector, count }))
-        .sort((a, b) => b.count - a.count);
-    });
+    const result = db.prepare('SELECT * FROM emails_sent WHERE id = ?').get(id);
+    return result;
   },
 
-  async getContacts(sectors?: string[]): Promise<any[]> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      let query = supabase.from('contacts').select('*').order('created_at', { ascending: false });
-
-      if (sectors && sectors.length > 0) {
-        query = query.in('sector', sectors);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('[db] Get contacts error:', error);
-        throw new Error(`Failed to get contacts: ${error.message}`);
-      }
-
-      return data || [];
-    });
-  },
-
-  async addContact(contact: any): Promise<any> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const id = `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      const { data, error } = await supabase
-        .from('contacts')
-        .insert({
-          id,
-          email: contact.email,
-          first_name: contact.firstName || null,
-          last_name: contact.lastName || null,
-          company: contact.company || null,
-          title: contact.title || null,
-          sector: contact.sector || 'other',
-          linkedin: contact.linkedin || null,
-          notes: contact.notes || null,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[db] Add contact error:', error);
-        throw new Error(`Failed to add contact: ${error.message}`);
-      }
-
-      return data;
-    });
-  },
-
-  async deleteContact(contactId: string): Promise<void> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const { error } = await supabase.from('contacts').delete().eq('id', contactId);
-
-      if (error) {
-        console.error('[db] Delete contact error:', error);
-        throw new Error(`Failed to delete contact: ${error.message}`);
-      }
-    });
-  },
-
-  async createNewsletter(title: string, content: string, signal: any): Promise<any> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const id = `newsletter_${Date.now()}`;
-
-      const { data, error } = await supabase
-        .from('newsletters')
-        .insert({
-          id,
-          title,
-          content,
-          signal,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[db] Create newsletter error:', error);
-        throw new Error(`Failed to create newsletter: ${error.message}`);
-      }
-
-      return data;
-    });
-  },
-
-  async getRecentNewsletters(limit: number = 5): Promise<any[]> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from('newsletters')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (error) {
-        console.error('[db] Get recent newsletters error:', error);
-        throw new Error(`Failed to get newsletters: ${error.message}`);
-      }
-
-      return data || [];
-    });
-  },
-
-  async createEmailSent(emailData: any): Promise<any> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const id = `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      const { data, error } = await supabase
-        .from('emails_sent')
-        .insert({
-          id,
-          contact_id: emailData.contactId,
-          newsletter_id: emailData.newsletterId,
-          subject: emailData.subject,
-          html_content: emailData.htmlContent,
-          text_content: emailData.textContent || '',
-          resend_id: emailData.resendId,
-          status: emailData.status || 'pending',
-          sector: emailData.sector,
-          sent_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('[db] Create email sent error:', error);
-        throw new Error(`Failed to create email record: ${error.message}`);
-      }
-
-      return data;
-    });
-  },
-
-  async getEmailStats(): Promise<{
+  getEmailStats(): {
     total: number;
     byStatus: Array<{ status: string; count: number }>;
     bySector: Array<{ sector: string; count: number }>;
     opened: number;
     clicked: number;
-  }> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
+  } {
+    const db = getSQLiteClient();
 
-      const { count: total } = await supabase
-        .from('emails_sent')
-        .select('*', { count: 'exact', head: true });
+    const totalResult = db.prepare('SELECT COUNT(*) as count FROM emails_sent').get() as { count: number };
+    const total = totalResult.count;
 
-      const { data: allEmails } = await supabase
-        .from('emails_sent')
-        .select('status, sector, opened_at, clicked_at');
+    const byStatus = db.prepare(`
+      SELECT status, COUNT(*) as count
+      FROM emails_sent
+      GROUP BY status
+      ORDER BY count DESC
+    `).all() as Array<{ status: string; count: number }>;
 
-      const emails = allEmails || [];
+    const bySector = db.prepare(`
+      SELECT sector, COUNT(*) as count
+      FROM emails_sent
+      GROUP BY sector
+      ORDER BY count DESC
+    `).all() as Array<{ sector: string; count: number }>;
 
-      const byStatus = emails.reduce((acc: Record<string, number>, email) => {
-        const status = email.status || 'unknown';
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      }, {});
+    const openedResult = db.prepare(
+      'SELECT COUNT(*) as count FROM emails_sent WHERE opened_at IS NOT NULL'
+    ).get() as { count: number };
 
-      const bySector = emails.reduce((acc: Record<string, number>, email) => {
-        const sector = email.sector || 'unknown';
-        acc[sector] = (acc[sector] || 0) + 1;
-        return acc;
-      }, {});
+    const clickedResult = db.prepare(
+      'SELECT COUNT(*) as count FROM emails_sent WHERE clicked_at IS NOT NULL'
+    ).get() as { count: number };
 
-      const opened = emails.filter(e => e.opened_at).length;
-      const clicked = emails.filter(e => e.clicked_at).length;
-
-      return {
-        total: total || 0,
-        byStatus: Object.entries(byStatus)
-          .map(([status, count]) => ({ status, count }))
-          .sort((a, b) => b.count - a.count),
-        bySector: Object.entries(bySector)
-          .map(([sector, count]) => ({ sector, count }))
-          .sort((a, b) => b.count - a.count),
-        opened,
-        clicked,
-      };
-    });
+    return {
+      total,
+      byStatus,
+      bySector,
+      opened: openedResult.count,
+      clicked: clickedResult.count,
+    };
   },
 
-  async updateEmailStatus(resendId: string, updates: any): Promise<any> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from('emails_sent')
-        .update(updates)
-        .eq('resend_id', resendId)
-        .select()
-        .maybeSingle();
+  updateEmailStatus(resendId: string, updates: any): any {
+    const db = getSQLiteClient();
 
-      if (error) {
-        console.error('[db] Update email status error:', error);
-        throw new Error(`Failed to update email status: ${error.message}`);
-      }
+    const setClauses: string[] = [];
+    const values: any[] = [];
 
-      return data;
-    });
+    if (updates.status !== undefined) {
+      setClauses.push('status = ?');
+      values.push(updates.status);
+    }
+    if (updates.delivered_at !== undefined) {
+      setClauses.push('delivered_at = ?');
+      values.push(updates.delivered_at);
+    }
+    if (updates.opened_at !== undefined) {
+      setClauses.push('opened_at = ?');
+      values.push(updates.opened_at);
+    }
+    if (updates.clicked_at !== undefined) {
+      setClauses.push('clicked_at = ?');
+      values.push(updates.clicked_at);
+    }
+    if (updates.replied_at !== undefined) {
+      setClauses.push('replied_at = ?');
+      values.push(updates.replied_at);
+    }
+
+    if (setClauses.length === 0) {
+      return null;
+    }
+
+    values.push(resendId);
+
+    const stmt = db.prepare(`
+      UPDATE emails_sent
+      SET ${setClauses.join(', ')}
+      WHERE resend_id = ?
+    `);
+
+    stmt.run(...values);
+
+    const result = db.prepare('SELECT * FROM emails_sent WHERE resend_id = ?').get(resendId);
+    return result;
   },
 
-  async getFailedEmails(): Promise<any[]> {
-    return retryOperation(async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from('emails_sent')
-        .select('*')
-        .eq('status', 'failed')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('[db] Get failed emails error:', error);
-        throw new Error(`Failed to get failed emails: ${error.message}`);
-      }
-
-      return data || [];
-    });
+  getFailedEmails(): any[] {
+    const db = getSQLiteClient();
+    const results = db.prepare(`
+      SELECT * FROM emails_sent
+      WHERE status = 'failed'
+      ORDER BY created_at DESC
+    `).all();
+    return results;
   },
 };

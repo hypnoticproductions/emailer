@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/lib/supabase-client';
+import { database } from '@/lib/database-operations';
+import { getSQLiteClient } from '@/lib/sqlite-client';
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -14,20 +15,14 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const supabase = getSupabaseClient();
-    let query = supabase.from('contacts').delete();
-
     if (id) {
-      query = query.eq('id', id);
+      database.deleteContact(id);
     } else if (email) {
-      query = query.eq('email', email.toLowerCase());
-    }
-
-    const { error } = await query;
-
-    if (error) {
-      console.error('[contacts] Error deleting contact:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      const db = getSQLiteClient();
+      const contact = db.prepare('SELECT id FROM contacts WHERE email = ?').get(email.toLowerCase()) as { id: string } | undefined;
+      if (contact) {
+        database.deleteContact(contact.id);
+      }
     }
 
     return NextResponse.json({

@@ -1,34 +1,20 @@
-import { getSupabaseClient, validateSupabaseConnection } from './supabase-client';
+import { getSQLiteClient } from './sqlite-client';
 import { database } from './database-operations';
 
 export async function checkDatabaseHealth() {
   try {
-    const connectionCheck = await validateSupabaseConnection();
-
-    if (!connectionCheck.valid) {
-      return {
-        healthy: false,
-        error: connectionCheck.error,
-        message: 'Database connection failed',
-      };
-    }
-
-    const supabase = getSupabaseClient();
+    const db = getSQLiteClient();
     const tables = ['contacts', 'newsletters', 'emails_sent'];
     const results = [];
 
     for (const table of tables) {
       try {
-        const { error, count } = await supabase
-          .from(table)
-          .select('id', { count: 'exact', head: true })
-          .limit(1);
-
+        const result = db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number };
         results.push({
           table,
-          exists: !error || error.code !== '42P01',
-          rowCount: count || 0,
-          error: error ? error.message : null,
+          exists: true,
+          rowCount: result.count,
+          error: null,
         });
       } catch (err) {
         results.push({

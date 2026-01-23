@@ -1,4 +1,3 @@
-import { validateSupabaseConnection } from './supabase-client';
 import { checkDatabaseHealth } from './db';
 
 interface ValidationResult {
@@ -13,8 +12,6 @@ export async function validateStartup(): Promise<ValidationResult> {
   const warnings: string[] = [];
 
   const requiredEnvVars = {
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
   };
@@ -32,20 +29,6 @@ export async function validateStartup(): Promise<ValidationResult> {
     }
   }
 
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  if (serviceRoleKey && !serviceRoleKey.startsWith('eyJ')) {
-    errors.push(
-      'SUPABASE_SERVICE_ROLE_KEY appears invalid. It should be a JWT token starting with "eyJ". ' +
-      'Get it from: Supabase Dashboard → Settings → API → service_role key'
-    );
-  }
-
-  if (serviceRoleKey && serviceRoleKey.length < 100) {
-    errors.push(
-      'SUPABASE_SERVICE_ROLE_KEY appears incomplete. It should be 200+ characters long.'
-    );
-  }
-
   for (const [key, value] of Object.entries(optionalEnvVars)) {
     if (!value) {
       if (key.startsWith('GITHUB_')) {
@@ -58,14 +41,9 @@ export async function validateStartup(): Promise<ValidationResult> {
 
   if (errors.length === 0) {
     try {
-      const connectionResult = await validateSupabaseConnection();
-      if (!connectionResult.valid) {
-        errors.push(`Database connection failed: ${connectionResult.error}`);
-      } else {
-        const healthCheck = await checkDatabaseHealth();
-        if (!healthCheck.healthy) {
-          errors.push(`Database health check failed: ${healthCheck.error || healthCheck.message}`);
-        }
+      const healthCheck = await checkDatabaseHealth();
+      if (!healthCheck.healthy) {
+        errors.push(`Database health check failed: ${healthCheck.error || healthCheck.message}`);
       }
     } catch (error) {
       errors.push(
@@ -118,6 +96,6 @@ export function logValidationResults(result: ValidationResult): void {
 
   if (!result.valid) {
     console.error('⚠️  Please fix the errors above before using the application.\n');
-    console.error('📖 See SUPABASE_SETUP.md for detailed setup instructions.\n');
+    console.error('📖 See SETUP.md for detailed setup instructions.\n');
   }
 }

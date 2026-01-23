@@ -1,30 +1,39 @@
 // app/api/sync-status/route.ts - Sync email status from Resend API
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSQLiteClient } from '@/lib/sqlite-client';
+import { database } from '@/lib/database-operations';
 import { emailClient } from '@/lib/resend';
 
 export async function POST(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '50'); // Limit to avoid rate limits
+    const limit = parseInt(searchParams.get('limit') || '50');
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    const db = getSQLiteClient();
 
-    // Fetch emails that have a resend_id (successfully sent to Resend)
-    // Join with contacts to get email address
-    const { data: emails, error: fetchError } = await supabase
-      .from('emails_sent')
-      .select('id, resend_id, status, opened_at, clicked_at, contact_id, contacts(email)')
-      .not('resend_id', 'is', null)
-      .order('sent_at', { ascending: false })
-      .limit(limit);
-
-    if (fetchError) {
-      throw new Error(fetchError.message);
-    }
+    const emails = db.prepare(`
+      SELECT
+        e.id,
+        e.resend_id,
+        e.status,
+        e.opened_at,
+        e.clicked_at,
+        e.contact_id,
+        c.email as contact_email
+      FROM emails_sent e
+      LEFT JOIN contacts c ON e.contact_id = c.id
+      WHERE e.resend_id IS NOT NULL
+      ORDER BY e.sent_at DESC
+      LIMIT ?
+    `).all(limit) as Array<{
+      id: string;
+      resend_id: string;
+      status: string;
+      opened_at: string | null;
+      clicked_at: string | null;
+      contact_id: string;
+      contact_email: string;
+    }>;
 
     if (!emails || emails.length === 0) {
       return NextResponse.json({
@@ -34,21 +43,18 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Get status for each email from Resend
-    const emailIds = emails.map((e: any) => e.resend_id);
+    const emailIds = emails.map((e) => e.resend_id);
     const statusResults = await emailClient.getEmailStatuses(emailIds);
 
-    // Update database with real status
     let syncedCount = 0;
     let errorCount = 0;
     const updates = [];
 
     for (const result of statusResults) {
       if (result.success && result.status) {
-        const email = emails.find((e: any) => e.resend_id === result.emailId);
+        const email = emails.find((e) => e.resend_id === result.emailId);
 
         if (email) {
-          // Map Resend status to our database status
           let dbStatus = 'sent';
 
           if (result.status.last_event) {
@@ -59,34 +65,32 @@ export async function POST(request: NextRequest) {
             } else if (lastEvent.includes('bounce') || lastEvent.includes('failed')) {
               dbStatus = 'failed';
             } else if (lastEvent.includes('opened')) {
-              dbStatus = 'delivered'; // If opened, it was delivered
+              dbStatus = 'delivered';
             } else if (lastEvent.includes('clicked')) {
               dbStatus = 'delivered';
             }
           }
 
-          // Update the database
-          const { error: updateError } = await supabase
-            .from('emails_sent')
-            .update({
-              status: dbStatus,
-              opened_at: result.status.last_event === 'opened' ? new Date().toISOString() : email.opened_at,
-              clicked_at: result.status.last_event === 'clicked' ? new Date().toISOString() : email.clicked_at,
-            })
-            .eq('id', email.id);
+          const updateData: any = {
+            status: dbStatus,
+          };
 
-          if (!updateError) {
-            syncedCount++;
-            updates.push({
-              email: (email as any).contacts?.email || 'unknown',
-              oldStatus: email.status,
-              newStatus: dbStatus,
-              lastEvent: result.status.last_event,
-            });
-          } else {
-            console.error('Update error for email', email.id, updateError);
-            errorCount++;
+          if (result.status.last_event === 'opened') {
+            updateData.opened_at = new Date().toISOString();
           }
+          if (result.status.last_event === 'clicked') {
+            updateData.clicked_at = new Date().toISOString();
+          }
+
+          database.updateEmailStatus(email.resend_id, updateData);
+
+          syncedCount++;
+          updates.push({
+            email: email.contact_email || 'unknown',
+            oldStatus: email.status,
+            newStatus: dbStatus,
+            lastEvent: result.status.last_event,
+          });
         }
       } else {
         errorCount++;

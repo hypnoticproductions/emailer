@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/lib/supabase-client';
+import { getSQLiteClient } from '@/lib/sqlite-client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,34 +9,45 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    const supabase = getSupabaseClient();
+    const db = getSQLiteClient();
 
-    let query = supabase
-      .from('contacts')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+    let query = 'SELECT * FROM contacts WHERE 1=1';
+    const params: any[] = [];
 
     if (sector && sector !== 'all') {
-      query = query.eq('sector', sector);
+      query += ' AND sector = ?';
+      params.push(sector);
     }
 
     if (search) {
-      query = query.or(
-        `email.ilike.%${search}%,company.ilike.%${search}%,first_name.ilike.%${search}%,last_name.ilike.%${search}%`
-      );
+      query += ' AND (email LIKE ? OR company LIKE ? OR first_name LIKE ? OR last_name LIKE ?)';
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
-    const { data, error, count } = await query;
+    query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
 
-    if (error) {
-      console.error('[contacts] Error fetching contacts:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const contacts = db.prepare(query).all(...params);
+
+    const countQuery = 'SELECT COUNT(*) as count FROM contacts WHERE 1=1' +
+      (sector && sector !== 'all' ? ' AND sector = ?' : '') +
+      (search ? ' AND (email LIKE ? OR company LIKE ? OR first_name LIKE ? OR last_name LIKE ?)' : '');
+
+    const countParams: any[] = [];
+    if (sector && sector !== 'all') {
+      countParams.push(sector);
     }
+    if (search) {
+      const searchPattern = `%${search}%`;
+      countParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    const countResult = db.prepare(countQuery).get(...countParams) as { count: number };
 
     return NextResponse.json({
-      contacts: data || [],
-      total: count || 0,
+      contacts: contacts || [],
+      total: countResult.count || 0,
       limit,
       offset,
     });

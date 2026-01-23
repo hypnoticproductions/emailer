@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
         {
           error: 'Database connection is not healthy',
           details: health.error || health.message,
-          suggestion: 'Check your SUPABASE_SERVICE_ROLE_KEY in .env file. See SUPABASE_SETUP.md for instructions.',
+          suggestion: 'Check your database configuration.',
         },
         { status: 503 }
       );
@@ -20,31 +20,46 @@ export async function GET(request: NextRequest) {
 
     console.log('[dashboard] Database health check passed');
 
-    const [totalContacts, contactsBySector, emailStats, recentNewsletters] =
-      await Promise.all([
-        db.countContacts().catch(err => {
-          console.error('[dashboard] Count contacts failed:', err);
-          return 0;
-        }),
-        db.getContactsBySector().catch(err => {
-          console.error('[dashboard] Get contacts by sector failed:', err);
-          return [];
-        }),
-        db.getEmailStats().catch(err => {
-          console.error('[dashboard] Get email stats failed:', err);
-          return {
-            total: 0,
-            byStatus: [],
-            bySector: [],
-            opened: 0,
-            clicked: 0,
-          };
-        }),
-        db.getRecentNewsletters(5).catch(err => {
-          console.error('[dashboard] Get recent newsletters failed:', err);
-          return [];
-        }),
-      ]);
+    let totalContacts = 0;
+    let contactsBySector: Array<{ sector: string; count: number }> = [];
+    let emailStats: {
+      total: number;
+      byStatus: Array<{ status: string; count: number }>;
+      bySector: Array<{ sector: string; count: number }>;
+      opened: number;
+      clicked: number;
+    } = {
+      total: 0,
+      byStatus: [],
+      bySector: [],
+      opened: 0,
+      clicked: 0,
+    };
+    let recentNewsletters: any[] = [];
+
+    try {
+      totalContacts = db.countContacts();
+    } catch (err) {
+      console.error('[dashboard] Count contacts failed:', err);
+    }
+
+    try {
+      contactsBySector = db.getContactsBySector();
+    } catch (err) {
+      console.error('[dashboard] Get contacts by sector failed:', err);
+    }
+
+    try {
+      emailStats = db.getEmailStats();
+    } catch (err) {
+      console.error('[dashboard] Get email stats failed:', err);
+    }
+
+    try {
+      recentNewsletters = db.getRecentNewsletters(5);
+    } catch (err) {
+      console.error('[dashboard] Get recent newsletters failed:', err);
+    }
 
     const openRate =
       emailStats.total > 0
@@ -100,15 +115,12 @@ export async function GET(request: NextRequest) {
     console.error('[dashboard] Unexpected error:', error);
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const isConfigError = errorMessage.includes('SUPABASE_SERVICE_ROLE_KEY');
 
     return NextResponse.json(
       {
         error: 'Failed to fetch dashboard data',
         message: errorMessage,
-        suggestion: isConfigError
-          ? 'Update your SUPABASE_SERVICE_ROLE_KEY in .env file. See SUPABASE_SETUP.md for instructions.'
-          : 'Check server logs for more details',
+        suggestion: 'Check server logs for more details',
       },
       { status: 500 }
     );
