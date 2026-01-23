@@ -125,8 +125,10 @@ export const githubClient = {
         throw new Error(`No ${type}s found in repository`);
       }
 
-      // Get the most recent file (assuming files are sorted or picking first non-template)
-      const latestFile = files.find(f => !f.name.includes('template')) || files[0];
+      // Get the most recent file by sorting alphabetically descending (newest dates first)
+      const nonTemplateFiles = files.filter(f => !f.name.includes('template'));
+      const sortedFiles = nonTemplateFiles.sort((a, b) => b.name.localeCompare(a.name));
+      const latestFile = sortedFiles[0] || files[0];
 
       const content = await this.getFile(latestFile.path);
 
