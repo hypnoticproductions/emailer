@@ -28,6 +28,11 @@ export const githubClient = {
    */
   async listNewsletters(): Promise<ContentFile[]> {
     try {
+      console.log('[github] Listing newsletters...');
+      console.log('[github] Owner:', process.env.GITHUB_OWNER);
+      console.log('[github] Repo:', process.env.GITHUB_REPO);
+      console.log('[github] Token:', process.env.GITHUB_TOKEN ? 'SET' : 'MISSING');
+
       const response = await axios.get(
         `https://api.github.com/repos/${process.env.GITHUB_OWNER}/${process.env.GITHUB_REPO}/contents/newsletters`,
         {
@@ -37,7 +42,7 @@ export const githubClient = {
         }
       );
 
-      return response.data
+      const files = response.data
         .filter((file: any) => file.type === 'file' && file.name.endsWith('.md'))
         .map((file: any) => ({
           name: file.name,
@@ -45,8 +50,15 @@ export const githubClient = {
           type: 'newsletter',
           download_url: file.download_url,
         }));
+
+      console.log('[github] Found newsletters:', files.map((f: any) => f.name));
+      return files;
     } catch (error) {
       console.error('Failed to list newsletters:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+      }
       return [];
     }
   },
@@ -117,9 +129,12 @@ export const githubClient = {
    */
   async getLatestContent(type: 'newsletter' | 'proposal' = 'newsletter'): Promise<any> {
     try {
+      console.log(`[github] Getting latest ${type}...`);
       const files = type === 'newsletter'
         ? await this.listNewsletters()
         : await this.listProposals();
+
+      console.log(`[github] Found ${files.length} files:`, files.map(f => f.name));
 
       if (files.length === 0) {
         throw new Error(`No ${type}s found in repository`);
@@ -129,6 +144,8 @@ export const githubClient = {
       const nonTemplateFiles = files.filter(f => !f.name.includes('template'));
       const sortedFiles = nonTemplateFiles.sort((a, b) => b.name.localeCompare(a.name));
       const latestFile = sortedFiles[0] || files[0];
+
+      console.log(`[github] Selected file:`, latestFile.name);
 
       const content = await this.getFile(latestFile.path);
 

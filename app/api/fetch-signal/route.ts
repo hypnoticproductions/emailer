@@ -5,19 +5,23 @@ import { db } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
+    console.log('[fetch-signal] Starting fetch...');
     const { searchParams } = new URL(request.url);
     const type = (searchParams.get('type') as 'newsletter' | 'proposal') || 'newsletter';
     const filename = searchParams.get('filename');
+    console.log('[fetch-signal] Type:', type, 'Filename:', filename);
 
     let content: any;
 
     if (filename) {
-      // Fetch specific file
+      console.log('[fetch-signal] Fetching specific file:', filename);
       content = await githubClient.getContentByName(filename, type);
     } else {
-      // Fetch latest content
+      console.log('[fetch-signal] Fetching latest content...');
       content = await githubClient.getLatestContent(type);
     }
+
+    console.log('[fetch-signal] Content fetched:', content?.fileName);
 
     if (!content) {
       return NextResponse.json(
