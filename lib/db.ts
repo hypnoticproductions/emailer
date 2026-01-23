@@ -15,18 +15,34 @@ function getSupabaseClient(): SupabaseClient {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+  if (!supabaseUrl) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set in environment variables');
   }
 
-  globalThis.supabase = createClient(supabaseUrl, supabaseKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  if (!supabaseKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set in environment variables');
+  }
 
-  return globalThis.supabase;
+  console.log('[db] Initializing Supabase client');
+  console.log('[db] URL:', supabaseUrl);
+  console.log('[db] Service key present:', supabaseKey ? 'YES' : 'NO');
+  console.log('[db] Service key length:', supabaseKey.length);
+  console.log('[db] Service key prefix:', supabaseKey.substring(0, 10));
+
+  try {
+    globalThis.supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+
+    console.log('[db] Supabase client created successfully');
+    return globalThis.supabase;
+  } catch (error) {
+    console.error('[db] Failed to create Supabase client:', error);
+    throw new Error(`Failed to initialize Supabase client: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 // Database health check - verify tables exist

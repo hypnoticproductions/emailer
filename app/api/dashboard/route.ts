@@ -4,15 +4,26 @@ import { db } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
+    console.log('[dashboard] Fetching dashboard data...');
+
     // Get contacts stats
+    console.log('[dashboard] Fetching contact count...');
     const totalContacts = await db.countContacts();
+    console.log('[dashboard] Total contacts:', totalContacts);
+
+    console.log('[dashboard] Fetching contacts by sector...');
     const contactsBySector = await db.getContactsBySector();
+    console.log('[dashboard] Contacts by sector:', contactsBySector);
 
     // Get email stats
+    console.log('[dashboard] Fetching email stats...');
     const emailStats = await db.getEmailStats();
+    console.log('[dashboard] Email stats:', emailStats);
 
     // Get recent newsletters
+    console.log('[dashboard] Fetching recent newsletters...');
     const recentNewsletters = await db.getRecentNewsletters(5);
+    console.log('[dashboard] Recent newsletters:', recentNewsletters);
 
     // Calculate engagement rates
     const openRate =
@@ -25,7 +36,8 @@ export async function GET(request: NextRequest) {
         ? ((emailStats.clicked / emailStats.total) * 100).toFixed(1)
         : '0.0';
 
-    return NextResponse.json({
+    console.log('[dashboard] Preparing response...');
+    const response = {
       contacts: {
         total: totalContacts,
         bySector: contactsBySector.map((row: any) => ({
@@ -58,12 +70,18 @@ export async function GET(request: NextRequest) {
         createdAt: row.created_at,
         sentAt: row.sent_at,
         _count: {
-          emailsSent: 0, // TODO: Add count
+          emailsSent: 0,
         },
       })),
-    });
+    };
+
+    console.log('[dashboard] Response ready:', JSON.stringify(response, null, 2));
+    return NextResponse.json(response);
   } catch (error) {
-    console.error('Dashboard error:', error);
+    console.error('[dashboard] ❌ Dashboard error:', error);
+    console.error('[dashboard] Error type:', error?.constructor?.name);
+    console.error('[dashboard] Error message:', error instanceof Error ? error.message : 'Unknown');
+    console.error('[dashboard] Error stack:', error instanceof Error ? error.stack : 'No stack');
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : 'Failed to fetch dashboard data',
