@@ -29,106 +29,43 @@ function getSupabaseClient(): SupabaseClient {
   return globalThis.supabase;
 }
 
-// Database initialization - create tables if they don't exist
-export async function initializeDatabase() {
+// Database health check - verify tables exist
+export async function checkDatabaseHealth() {
   try {
-    // Create Contact table
     const supabase = getSupabaseClient();
-    const { error: contactsError } = await supabase.rpc('exec_sql', {
-      sql: `
-        CREATE TABLE IF NOT EXISTS contacts (
-          id TEXT PRIMARY KEY,
-          email TEXT UNIQUE NOT NULL,
-          first_name TEXT,
-          last_name TEXT,
-          company TEXT,
-          title TEXT,
-          sector TEXT NOT NULL,
-          linkedin TEXT,
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-        );
-        CREATE INDEX IF NOT EXISTS idx_contacts_sector ON contacts(sector);
-        CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
-      `
-    });
 
-    // If RPC doesn't exist, try direct SQL execution
-    if (contactsError?.message?.includes('function') || contactsError?.code === '42883') {
-      // Tables need to be created via SQL editor in Supabase dashboard
-      // For now, we'll use the REST API to check if tables exist
-      const { data: contacts, error: checkError } = await supabase
-        .from('contacts')
+    // Check if tables exist by querying them
+    const tables = ['contacts', 'newsletters', 'emails_sent'];
+    const results = [];
+
+    for (const table of tables) {
+      const { error } = await supabase
+        .from(table)
         .select('id')
         .limit(1);
 
-      if (checkError && checkError.code === '42P01') {
-        // Table doesn't exist - need to create via SQL
-        throw new Error(
-          'Tables not found. Please run the following SQL in your Supabase SQL Editor:\n\n' +
-          `CREATE TABLE IF NOT EXISTS contacts (
-  id TEXT PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  first_name TEXT,
-  last_name TEXT,
-  company TEXT,
-  title TEXT,
-  sector TEXT NOT NULL,
-  linkedin TEXT,
-  notes TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_contacts_sector ON contacts(sector);
-CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email);
-
-CREATE TABLE IF NOT EXISTS newsletters (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  content TEXT NOT NULL,
-  signal JSONB,
-  metadata JSONB,
-  sent_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS emails_sent (
-  id TEXT PRIMARY KEY,
-  contact_id TEXT NOT NULL REFERENCES contacts(id),
-  newsletter_id TEXT NOT NULL REFERENCES newsletters(id),
-  subject TEXT NOT NULL,
-  html_content TEXT NOT NULL,
-  text_content TEXT,
-  resend_id TEXT UNIQUE,
-  status TEXT DEFAULT 'pending',
-  sent_at TIMESTAMP,
-  delivered_at TIMESTAMP,
-  opened_at TIMESTAMP,
-  clicked_at TIMESTAMP,
-  replied_at TIMESTAMP,
-  sector TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_emails_sent_contact_id ON emails_sent(contact_id);
-CREATE INDEX IF NOT EXISTS idx_emails_sent_newsletter_id ON emails_sent(newsletter_id);
-CREATE INDEX IF NOT EXISTS idx_emails_sent_status ON emails_sent(status);
-CREATE INDEX IF NOT EXISTS idx_emails_sent_sector ON emails_sent(sector);
-CREATE INDEX IF NOT EXISTS idx_emails_sent_resend_id ON emails_sent(resend_id);`
-        );
-      }
-
-      console.log('✅ Database tables verified');
-      return { success: true, message: 'Tables already exist or were verified' };
+      results.push({
+        table,
+        exists: !error || error.code !== '42P01',
+        error: error ? error.message : null,
+      });
     }
 
-    console.log('✅ Database tables initialized successfully');
-    return { success: true };
+    const allTablesExist = results.every(r => r.exists);
+
+    return {
+      healthy: allTablesExist,
+      tables: results,
+      message: allTablesExist
+        ? 'All database tables are ready'
+        : 'Some tables are missing. Please run migrations.',
+    };
   } catch (error) {
-    console.error('❌ Database initialization error:', error);
-    throw error;
+    console.error('❌ Database health check error:', error);
+    return {
+      healthy: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
   }
 }
 

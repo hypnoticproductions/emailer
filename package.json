@@ -7,11 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js",
+    "seed": "tsx scripts/seed-contacts.ts",
+    "health": "curl http://localhost:3000/api/health | json_pp"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
-    "@prisma/client": "^7.3.0",
     "@supabase/supabase-js": "^2.91.0",
     "axios": "^1.13.2",
     "lucide-react": "^0.562.0",
@@ -28,8 +29,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.4",
-    "prisma": "^7.3.0",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }
