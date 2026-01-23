@@ -2,33 +2,63 @@
 
 Get WUKR Wire up and running in 5 minutes!
 
+## ⚠️ CURRENT ISSUE: Dashboard Not Loading
+
+Your dashboard shows "Failed to fetch dashboard data" because the **SUPABASE_SERVICE_ROLE_KEY is invalid**.
+
+### Fix It Now (2 Minutes):
+
+1. Go to https://supabase.com/dashboard
+2. Select project **iyjtnqrlozgejaigdilz**
+3. Click **Settings** → **API**
+4. Find the **service_role** key (NOT anon key)
+5. Copy the full key (starts with `eyJ`, 200+ characters)
+6. Update your `.env`:
+   ```
+   SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.your_full_key...
+   ```
+7. Restart dev server: `npm run dev`
+
+**Your current key** (`sb_secret_xX03yRME9g4s1Kqb-5ST8A_FlyrUTLv`) **is incomplete/invalid!**
+
+See `SUPABASE_SETUP.md` for detailed instructions.
+
+---
+
 ## ✅ What's Already Done
 
 - ✅ Database tables created (contacts, newsletters, emails_sent)
-- ✅ Next.js app configured
-- ✅ Supabase connected
-- ✅ All API routes set up
+- ✅ Next.js app rebuilt with clean Supabase integration
+- ✅ All API routes updated with error handling
 - ✅ Build passing
+- ✅ Diagnostic endpoints added
 
-## 🔑 What You Need to Do
+## 🔑 Environment Variables
 
-### 1. Get API Keys (5 minutes)
-
-Open your `.env` file and add these keys:
+Your `.env` file needs these keys:
 
 ```bash
-# Get from Supabase Dashboard → Settings → API
-SUPABASE_SERVICE_ROLE_KEY=eyJ...
+# Supabase (Get from Dashboard → Settings → API)
+NEXT_PUBLIC_SUPABASE_URL=https://iyjtnqrlozgejaigdilz.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ... (already set)
+SUPABASE_SERVICE_ROLE_KEY=eyJ... (⚠️ NEEDS TO BE FIXED!)
 
-# Get from https://console.anthropic.com/settings/keys
-ANTHROPIC_API_KEY=sk-ant-api03-...
+# Claude AI (https://console.anthropic.com/settings/keys)
+ANTHROPIC_API_KEY=sk-ant-api03-... (already set)
 
-# Get from https://github.com/settings/tokens (needs 'repo' scope)
-GITHUB_TOKEN=ghp_...
+# GitHub (https://github.com/settings/tokens)
+GITHUB_TOKEN=ghp_... (already set)
+GITHUB_OWNER=hypnoticproductions (already set)
+GITHUB_REPO=quintapoo-memory (already set)
 
-# Get from https://resend.com/api-keys
-RESEND_API_KEY=re_...
+# Resend Email (https://resend.com/api-keys)
+RESEND_API_KEY=re_... (already set)
 ```
+
+**Valid service_role key must:**
+- Start with `eyJ`
+- Be 200-300 characters long
+- Be a JWT token, NOT `sb_secret_...`
 
 ### 2. Test Everything
 

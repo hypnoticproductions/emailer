@@ -1,31 +1,51 @@
-// app/api/dashboard/route.ts - Using raw PostgreSQL
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, checkDatabaseHealth } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('[dashboard] Fetching dashboard data...');
+    console.log('[dashboard] Starting dashboard data fetch...');
 
-    // Get contacts stats
-    console.log('[dashboard] Fetching contact count...');
-    const totalContacts = await db.countContacts();
-    console.log('[dashboard] Total contacts:', totalContacts);
+    const health = await checkDatabaseHealth();
+    if (!health.healthy) {
+      console.error('[dashboard] Database health check failed:', health);
+      return NextResponse.json(
+        {
+          error: 'Database connection is not healthy',
+          details: health.error || health.message,
+          suggestion: 'Check your SUPABASE_SERVICE_ROLE_KEY in .env file. See SUPABASE_SETUP.md for instructions.',
+        },
+        { status: 503 }
+      );
+    }
 
-    console.log('[dashboard] Fetching contacts by sector...');
-    const contactsBySector = await db.getContactsBySector();
-    console.log('[dashboard] Contacts by sector:', contactsBySector);
+    console.log('[dashboard] Database health check passed');
 
-    // Get email stats
-    console.log('[dashboard] Fetching email stats...');
-    const emailStats = await db.getEmailStats();
-    console.log('[dashboard] Email stats:', emailStats);
+    const [totalContacts, contactsBySector, emailStats, recentNewsletters] =
+      await Promise.all([
+        db.countContacts().catch(err => {
+          console.error('[dashboard] Count contacts failed:', err);
+          return 0;
+        }),
+        db.getContactsBySector().catch(err => {
+          console.error('[dashboard] Get contacts by sector failed:', err);
+          return [];
+        }),
+        db.getEmailStats().catch(err => {
+          console.error('[dashboard] Get email stats failed:', err);
+          return {
+            total: 0,
+            byStatus: [],
+            bySector: [],
+            opened: 0,
+            clicked: 0,
+          };
+        }),
+        db.getRecentNewsletters(5).catch(err => {
+          console.error('[dashboard] Get recent newsletters failed:', err);
+          return [];
+        }),
+      ]);
 
-    // Get recent newsletters
-    console.log('[dashboard] Fetching recent newsletters...');
-    const recentNewsletters = await db.getRecentNewsletters(5);
-    console.log('[dashboard] Recent newsletters:', recentNewsletters);
-
-    // Calculate engagement rates
     const openRate =
       emailStats.total > 0
         ? ((emailStats.opened / emailStats.total) * 100).toFixed(1)
@@ -36,22 +56,21 @@ export async function GET(request: NextRequest) {
         ? ((emailStats.clicked / emailStats.total) * 100).toFixed(1)
         : '0.0';
 
-    console.log('[dashboard] Preparing response...');
     const response = {
       contacts: {
         total: totalContacts,
-        bySector: contactsBySector.map((row: any) => ({
+        bySector: contactsBySector.map(row => ({
           sector: row.sector,
           _count: { sector: row.count },
         })),
       },
       emails: {
         total: emailStats.total,
-        byStatus: emailStats.byStatus.map((row: any) => ({
+        byStatus: emailStats.byStatus.map(row => ({
           status: row.status,
           _count: { status: row.count },
         })),
-        bySector: emailStats.bySector.map((row: any) => ({
+        bySector: emailStats.bySector.map(row => ({
           sector: row.sector,
           _count: { sector: row.count },
         })),
@@ -60,11 +79,11 @@ export async function GET(request: NextRequest) {
         totalSent: emailStats.total,
         totalOpened: emailStats.opened,
         totalClicked: emailStats.clicked,
-        totalReplied: 0, // TODO: Add reply tracking
+        totalReplied: 0,
         openRate: parseFloat(openRate),
         clickRate: parseFloat(clickRate),
       },
-      recentNewsletters: recentNewsletters.map((row: any) => ({
+      recentNewsletters: recentNewsletters.map(row => ({
         id: row.id,
         title: row.title,
         createdAt: row.created_at,
@@ -75,16 +94,21 @@ export async function GET(request: NextRequest) {
       })),
     };
 
-    console.log('[dashboard] Response ready:', JSON.stringify(response, null, 2));
+    console.log('[dashboard] Successfully prepared response');
     return NextResponse.json(response);
   } catch (error) {
-    console.error('[dashboard] ❌ Dashboard error:', error);
-    console.error('[dashboard] Error type:', error?.constructor?.name);
-    console.error('[dashboard] Error message:', error instanceof Error ? error.message : 'Unknown');
-    console.error('[dashboard] Error stack:', error instanceof Error ? error.stack : 'No stack');
+    console.error('[dashboard] Unexpected error:', error);
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const isConfigError = errorMessage.includes('SUPABASE_SERVICE_ROLE_KEY');
+
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : 'Failed to fetch dashboard data',
+        error: 'Failed to fetch dashboard data',
+        message: errorMessage,
+        suggestion: isConfigError
+          ? 'Update your SUPABASE_SERVICE_ROLE_KEY in .env file. See SUPABASE_SETUP.md for instructions.'
+          : 'Check server logs for more details',
       },
       { status: 500 }
     );

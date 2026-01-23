@@ -1,6 +1,5 @@
-// app/api/contacts/delete/route.ts - Delete a contact
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseClient } from '@/lib/supabase-client';
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -15,11 +14,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
+    const supabase = getSupabaseClient();
     let query = supabase.from('contacts').delete();
 
     if (id) {
@@ -31,11 +26,8 @@ export async function DELETE(request: NextRequest) {
     const { error } = await query;
 
     if (error) {
-      console.error('Error deleting contact:', error);
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
+      console.error('[contacts] Error deleting contact:', error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -43,7 +35,7 @@ export async function DELETE(request: NextRequest) {
       message: 'Contact deleted successfully',
     });
   } catch (error) {
-    console.error('Delete contact error:', error);
+    console.error('[contacts] Delete contact error:', error);
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : 'Failed to delete contact',

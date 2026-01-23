@@ -115,9 +115,44 @@ export default function Dashboard() {
   }
 
   if (error) {
+    const isConfigError = error.includes('SUPABASE') || error.includes('connection');
+
     return (
-      <div className="bg-red-50 p-6 rounded-2xl border-2 border-red-200">
-        <p className="text-red-600 font-semibold">{error}</p>
+      <div className="bg-red-50 p-8 rounded-2xl border-2 border-red-200 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 w-10 h-10 bg-red-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
+            !
+          </div>
+          <div className="flex-1">
+            <h3 className="text-xl font-bold text-red-900 mb-2">
+              Failed to load dashboard
+            </h3>
+            <p className="text-red-700 mb-4">{error}</p>
+
+            {isConfigError && (
+              <div className="bg-white p-4 rounded-xl border border-red-200 space-y-3">
+                <p className="font-semibold text-gray-900">How to fix this:</p>
+                <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
+                  <li>Go to your Supabase Dashboard</li>
+                  <li>Navigate to Settings → API</li>
+                  <li>Copy the service_role key (starts with "eyJ")</li>
+                  <li>Update SUPABASE_SERVICE_ROLE_KEY in your .env file</li>
+                  <li>Restart the development server</li>
+                </ol>
+                <p className="text-xs text-gray-600 mt-3">
+                  See SUPABASE_SETUP.md for detailed instructions
+                </p>
+              </div>
+            )}
+
+            <button
+              onClick={fetchStats}
+              className="mt-4 px-6 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-semibold"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
