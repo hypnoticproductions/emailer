@@ -9,17 +9,17 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'send' | 'dashboard'>('send');
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-cyan-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-2xl flex items-center justify-center shadow-lg">
                 <Zap className="w-9 h-9 text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
                   WUKR WIRE
                 </h1>
                 <p className="text-sm text-gray-600 font-medium">
@@ -44,7 +44,7 @@ export default function Home() {
             onClick={() => setActiveTab('send')}
             className={`flex items-center gap-3 px-6 py-3 rounded-xl font-bold transition-all duration-200 ${
               activeTab === 'send'
-                ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+                ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg'
                 : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
@@ -55,7 +55,7 @@ export default function Home() {
             onClick={() => setActiveTab('dashboard')}
             className={`flex items-center gap-3 px-6 py-3 rounded-xl font-bold transition-all duration-200 ${
               activeTab === 'dashboard'
-                ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+                ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg'
                 : 'text-gray-600 hover:bg-gray-100'
             }`}
           >

@@ -13,7 +13,7 @@ const SECTORS = [
   { id: 'agriculture', label: 'Agriculture', emoji: '🌾', color: 'from-yellow-400 to-yellow-600' },
   { id: 'music_creative', label: 'Music/Creative', emoji: '🎵', color: 'from-red-400 to-red-600' },
   { id: 'government', label: 'Government', emoji: '🏛️', color: 'from-gray-400 to-gray-600' },
-  { id: 'other', label: 'Other', emoji: '📊', color: 'from-indigo-400 to-indigo-600' },
+  { id: 'other', label: 'Other', emoji: '📊', color: 'from-teal-400 to-teal-600' },
 ];
 
 export default function SendForm() {
@@ -221,7 +221,7 @@ export default function SendForm() {
         <button
           type="submit"
           disabled={loading || !content || selectedSegments.length === 0 || !signal}
-          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-5 rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 hover:from-purple-700 hover:to-pink-700 shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
+          className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-5 rounded-2xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3 hover:from-blue-700 hover:to-cyan-700 shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
         >
           {loading ? (
             <>

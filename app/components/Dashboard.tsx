@@ -138,7 +138,7 @@ export default function Dashboard() {
           <button
             onClick={syncEmailStatus}
             disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white rounded-xl hover:from-teal-700 hover:to-cyan-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
           >
             <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Syncing...' : 'Sync Status'}
@@ -184,7 +184,7 @@ export default function Dashboard() {
         </div>
 
         {/* Emails Sent */}
-        <div className="bg-gradient-to-br from-purple-500 to-purple-700 p-6 rounded-2xl shadow-lg text-white">
+        <div className="bg-gradient-to-br from-teal-500 to-teal-700 p-6 rounded-2xl shadow-lg text-white">
           <div className="flex items-center justify-between mb-4">
             <Mail className="w-8 h-8 opacity-80" />
             <span className="text-sm font-semibold opacity-90">SENT</span>
@@ -240,7 +240,7 @@ export default function Dashboard() {
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full transition-all duration-500"
+                      className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-500"
                       style={{
                         width: `${(item._count.sector / stats.contacts.total) * 100}%`,
                       }}
@@ -255,7 +255,7 @@ export default function Dashboard() {
         {/* Emails by Status */}
         <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
           <div className="flex items-center gap-3 mb-6">
-            <TrendingUp className="w-6 h-6 text-purple-600" />
+            <TrendingUp className="w-6 h-6 text-teal-600" />
             <h3 className="text-xl font-bold text-gray-900">Email Status</h3>
           </div>
           <div className="space-y-3">
@@ -280,7 +280,7 @@ export default function Dashboard() {
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className={`bg-gradient-to-r ${colors[item.status] || 'from-gray-500 to-gray-600'} h-2 rounded-full transition-all duration-500`}
+                        className={`bg-gradient-to-r ${colors[item.status] || 'from-blue-500 to-blue-600'} h-2 rounded-full transition-all duration-500`}
                         style={{
                           width: `${(item._count.status / stats.emails.total) * 100}%`,
                         }}
